@@ -77,37 +77,41 @@ export const generatePDF = async (groups: DocumentGroup[]): Promise<void> => {
              }
              
              // 1. Load source document
-             // Try standard load first, then fallback to ignoreEncryption (for empty password protected files)
-             let srcDoc;
-             try {
-                srcDoc = await PDFDocument.load(arrayBuffer);
-             } catch (e) {
-                console.warn(`Standard load failed for ${item.name}, trying ignoreEncryption.`);
-                srcDoc = await PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
-             }
+             // We remove ignoreEncryption to prevent processing encrypted streams as garbage.
+             // If load fails, it means we don't have the password, so we shouldn't try to merge it.
+             const srcDoc = await PDFDocument.load(arrayBuffer);
              
-             // 2. Use embedPdf instead of copyPages
-             // This flattens the content (including forms/annotations) into a visual representation,
-             // fixing the "blank page" issue common with copyPages on complex PDFs.
-             const indices = srcDoc.getPageIndices();
-             const embeddedPages = await pdfDoc.embedPdf(srcDoc, indices);
+             // 2. Try embedPdf (Best quality, fixes blank pages)
+             try {
+                 const indices = srcDoc.getPageIndices();
+                 const embeddedPages = await pdfDoc.embedPdf(srcDoc, indices);
 
-             for (const embeddedPage of embeddedPages) {
-                // embedPdf handles rotation dimensions automatically relative to the coordinate system
-                const { width, height } = embeddedPage;
-                const page = pdfDoc.addPage([width, height]);
-                page.drawPage(embeddedPage, {
-                    x: 0,
-                    y: 0,
-                    width,
-                    height,
-                });
-                addedPageCount++;
+                 for (const embeddedPage of embeddedPages) {
+                    const { width, height } = embeddedPage;
+                    const page = pdfDoc.addPage([width, height]);
+                    page.drawPage(embeddedPage, {
+                        x: 0,
+                        y: 0,
+                        width,
+                        height,
+                    });
+                    addedPageCount++;
+                 }
+             } catch (embedError) {
+                 console.warn(`embedPdf failed for ${item.name}, falling back to copyPages. Reason:`, embedError);
+                 
+                 // 3. Fallback to copyPages (Robust against specific compression errors)
+                 // This is a safety net if embedPdf fails due to stream decoding issues.
+                 const copiedPages = await pdfDoc.copyPages(srcDoc, srcDoc.getPageIndices());
+                 copiedPages.forEach((page: any) => {
+                     pdfDoc.addPage(page);
+                     addedPageCount++;
+                 });
              }
 
            } catch (error) {
              console.error(`Error processing PDF ${item.name}:`, error);
-             alert(`Erro ao processar o arquivo PDF: ${item.name}. O arquivo pode estar corrompido ou protegido.`);
+             alert(`Erro ao processar o arquivo PDF: ${item.name}. O arquivo pode estar corrompido ou protegido por senha.`);
            }
         } else {
            // Handle Image
