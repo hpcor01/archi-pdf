@@ -8,7 +8,6 @@ declare global {
 import { DocumentGroup } from "../types";
 
 // Helper to convert any image URL (blob/base64) to PNG bytes via Canvas
-// This ensures compatibility for WebP and handles resizing/normalization if needed.
 const convertImageToPngBytes = async (url: string): Promise<Uint8Array> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -37,7 +36,6 @@ const convertImageToPngBytes = async (url: string): Promise<Uint8Array> => {
 };
 
 const downloadBlob = (data: Uint8Array, filename: string, mimeType: string) => {
-  // Cast data to any to avoid TypeScript error: Type 'Uint8Array<ArrayBufferLike>' is not assignable to type 'BlobPart'.
   const blob = new Blob([data as any], { type: mimeType });
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -78,13 +76,35 @@ export const generatePDF = async (groups: DocumentGroup[]): Promise<void> => {
                arrayBuffer = await fetch(item.url).then(res => res.arrayBuffer());
              }
              
-             // Load with ignoreEncryption: true to handle PDFs with empty owner passwords
-             const srcDoc = await PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
-             const copiedPages = await pdfDoc.copyPages(srcDoc, srcDoc.getPageIndices());
-             copiedPages.forEach((page: any) => {
-               pdfDoc.addPage(page);
-               addedPageCount++;
-             });
+             // 1. Load source document
+             // Try standard load first, then fallback to ignoreEncryption (for empty password protected files)
+             let srcDoc;
+             try {
+                srcDoc = await PDFDocument.load(arrayBuffer);
+             } catch (e) {
+                console.warn(`Standard load failed for ${item.name}, trying ignoreEncryption.`);
+                srcDoc = await PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
+             }
+             
+             // 2. Use embedPdf instead of copyPages
+             // This flattens the content (including forms/annotations) into a visual representation,
+             // fixing the "blank page" issue common with copyPages on complex PDFs.
+             const indices = srcDoc.getPageIndices();
+             const embeddedPages = await pdfDoc.embedPdf(srcDoc, indices);
+
+             for (const embeddedPage of embeddedPages) {
+                // embedPdf handles rotation dimensions automatically relative to the coordinate system
+                const { width, height } = embeddedPage;
+                const page = pdfDoc.addPage([width, height]);
+                page.drawPage(embeddedPage, {
+                    x: 0,
+                    y: 0,
+                    width,
+                    height,
+                });
+                addedPageCount++;
+             }
+
            } catch (error) {
              console.error(`Error processing PDF ${item.name}:`, error);
              alert(`Erro ao processar o arquivo PDF: ${item.name}. O arquivo pode estar corrompido ou protegido.`);
