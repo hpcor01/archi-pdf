@@ -181,7 +181,6 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
       const newPdf = await PDFDocument.create();
       
       // Cache loaded PDFs to avoid re-fetching/re-parsing
-      // Use string keys (url) but value is promise of PDFDocument
       const pdfCache: Record<string, Promise<any>> = {};
 
       const getSourcePdf = async (page: PdfPage) => {
@@ -193,20 +192,38 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
                 } else {
                     arrayBuffer = await fetch(page.sourceUrl).then(res => res.arrayBuffer());
                 }
-                return await PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
+                
+                // Robust load logic matching main service
+                try {
+                   return await PDFDocument.load(arrayBuffer);
+                } catch {
+                   return await PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
+                }
             })();
          }
          return pdfCache[page.sourceUrl];
       };
 
+      // Group pages by source PDF to optimize embedPdf calls
+      // Note: Since pages can be reordered arbitrarily, we must iterate sequentially.
+      // However, we can use the cache to get the *Source Document Object*.
+      // We will embed pages one by one or in batches?
+      // For simplicity and correctness with arbitrary reordering:
+      // We can iterate the final page list. If it's a PDF page, we get the source doc, embed THAT specific page, and draw it.
+      
       for (const page of pages) {
         if (page.sourceType === 'pdf') {
           const sourcePdf = await getSourcePdf(page);
-          const [copiedPage] = await newPdf.copyPages(sourcePdf, [page.originalIndex]);
-          newPdf.addPage(copiedPage);
+          
+          // Use embedPdf instead of copyPages for consistency
+          const [embeddedPage] = await newPdf.embedPdf(sourcePdf, [page.originalIndex]);
+          
+          const { width, height } = embeddedPage;
+          const newPage = newPdf.addPage([width, height]);
+          newPage.drawPage(embeddedPage, { x: 0, y: 0, width, height });
+
         } else {
            // Handle Image
-           // Prefer file buffer if available
            let imageBytes;
            if (page.originalFile) {
                imageBytes = await page.originalFile.arrayBuffer();
@@ -215,18 +232,12 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
            }
 
            let image;
-           // Basic detection usually sufficient if extension is correct, but robust implementation checks headers.
-           // Here assuming PNG/JPG/WebP based on what app allows.
-           // PDF-lib supports PNG and JPG. WebP needs conversion (not implemented here for brevity, assumed supported or handled elsewhere).
-           // Assuming common formats:
            try {
               image = await newPdf.embedPng(imageBytes);
            } catch {
               try {
                   image = await newPdf.embedJpg(imageBytes);
               } catch (e) {
-                  // If both fail, it might be unsupported format (like plain WebP without conversion layer).
-                  // For now, skip or log.
                   console.warn("Could not embed image", page.sourceUrl);
                   continue;
               }
