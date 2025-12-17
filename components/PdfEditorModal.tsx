@@ -192,35 +192,28 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
                 } else {
                     arrayBuffer = await fetch(page.sourceUrl).then(res => res.arrayBuffer());
                 }
-                
-                // Robust load logic matching main service
-                try {
-                   return await PDFDocument.load(arrayBuffer);
-                } catch {
-                   return await PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
-                }
+                // Robust load logic: do not ignore encryption, let it fail if needed
+                return await PDFDocument.load(arrayBuffer);
             })();
          }
          return pdfCache[page.sourceUrl];
       };
 
-      // Group pages by source PDF to optimize embedPdf calls
-      // Note: Since pages can be reordered arbitrarily, we must iterate sequentially.
-      // However, we can use the cache to get the *Source Document Object*.
-      // We will embed pages one by one or in batches?
-      // For simplicity and correctness with arbitrary reordering:
-      // We can iterate the final page list. If it's a PDF page, we get the source doc, embed THAT specific page, and draw it.
-      
       for (const page of pages) {
         if (page.sourceType === 'pdf') {
           const sourcePdf = await getSourcePdf(page);
           
-          // Use embedPdf instead of copyPages for consistency
-          const [embeddedPage] = await newPdf.embedPdf(sourcePdf, [page.originalIndex]);
-          
-          const { width, height } = embeddedPage;
-          const newPage = newPdf.addPage([width, height]);
-          newPage.drawPage(embeddedPage, { x: 0, y: 0, width, height });
+          // Hybrid approach: Try embedPdf, fallback to copyPages
+          try {
+              const [embeddedPage] = await newPdf.embedPdf(sourcePdf, [page.originalIndex]);
+              const { width, height } = embeddedPage;
+              const newPage = newPdf.addPage([width, height]);
+              newPage.drawPage(embeddedPage, { x: 0, y: 0, width, height });
+          } catch (embedError) {
+              console.warn(`embedPdf failed for page ${page.originalIndex}, falling back to copyPages`, embedError);
+              const [copiedPage] = await newPdf.copyPages(sourcePdf, [page.originalIndex]);
+              newPdf.addPage(copiedPage);
+          }
 
         } else {
            // Handle Image
