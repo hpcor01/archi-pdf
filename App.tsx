@@ -450,7 +450,7 @@ const App = () => {
              <p>Αρχή - {t.footerQuote}</p>
              <p>
                Αρχή PDF© {new Date().getFullYear()} - {t.rightsReserved}. |{' '}
-               <a title="Help" href="mailto:ti@advocaciabichara.com.br" className="hover:text-emerald-500 transition">{t.supportLink}</a> |{' '}
+               <a title="Help" href="https://app.pipefy.com/public/form/d_5r27Kf" target="_blank" className="hover:text-emerald-500 transition">{t.supportLink}</a> |{' '}
                <button 
                  onClick={() => setShowVersionInfo(!showVersionInfo)} 
                  className="hover:text-emerald-500 transition font-medium underline decoration-dotted underline-offset-2"
@@ -467,7 +467,7 @@ const App = () => {
              <div className="flex justify-between items-center mb-3">
                  <div className="flex items-center space-x-2 text-emerald-600 dark:text-emerald-400">
                     <Sparkles size={18} />
-                    <h3 className="font-bold text-base">Versão 2.0</h3>
+                    <h3 className="font-bold text-base">Versão 2.1</h3>
                  </div>
                  <button 
                    onClick={() => setShowVersionInfo(false)} 
