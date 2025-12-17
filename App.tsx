@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, X, Sparkles } from 'lucide-react';
+import { Analytics } from '@vercel/analytics/react';
 import TopBar from './components/TopBar';
 import DocumentColumn from './components/DocumentColumn';
 import EditorModal from './components/EditorModal';
@@ -522,6 +523,9 @@ const App = () => {
             language={language}
           />
         )}
+
+        {/* Vercel Web Analytics */}
+        <Analytics />
       </div>
     </div>
   );
