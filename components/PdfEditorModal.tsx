@@ -25,6 +25,7 @@ interface PdfPage {
   id: string;
   sourceUrl: string; // The URL of the file this page belongs to
   sourceType: 'pdf' | 'image';
+  originalFile?: File; // Store file reference if available for reliable loading
 }
 
 const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, onUpdate, language }) => {
@@ -64,7 +65,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
     setIsLoading(true);
     setPages([]);
     try {
-      await processFile(item.url, 'pdf');
+      await processFile(item.url, 'pdf', item.originalFile);
     } catch (e) {
       console.error(e);
       alert("Error initializing editor");
@@ -73,12 +74,18 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
     }
   };
 
-  const processFile = async (url: string, type: 'pdf' | 'image') => {
+  const processFile = async (url: string, type: 'pdf' | 'image', file?: File) => {
     if (type === 'pdf') {
       if (!window.pdfjsLib) return;
 
-      const response = await fetch(url);
-      const arrayBuffer = await response.arrayBuffer();
+      let arrayBuffer;
+      if (file) {
+          arrayBuffer = await file.arrayBuffer();
+      } else {
+          const response = await fetch(url);
+          arrayBuffer = await response.arrayBuffer();
+      }
+
       const loadingTask = window.pdfjsLib.getDocument(arrayBuffer);
       const pdf = await loadingTask.promise;
       const numPages = pdf.numPages;
@@ -101,7 +108,8 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
             thumbnail: canvas.toDataURL(),
             id: Math.random().toString(36).substr(2, 9),
             sourceUrl: url,
-            sourceType: 'pdf'
+            sourceType: 'pdf',
+            originalFile: file
           });
         }
       }
@@ -135,7 +143,8 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
         thumbnail: canvas.toDataURL(),
         id: Math.random().toString(36).substr(2, 9),
         sourceUrl: url,
-        sourceType: 'image'
+        sourceType: 'image',
+        originalFile: file
       }]);
     }
   };
@@ -149,7 +158,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
         const file = e.target.files[i];
         const url = URL.createObjectURL(file);
         const type = file.type === 'application/pdf' ? 'pdf' : 'image';
-        await processFile(url, type);
+        await processFile(url, type, file);
       }
     } catch (err) {
       console.error("Error adding files", err);
@@ -172,24 +181,39 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
       const newPdf = await PDFDocument.create();
       
       // Cache loaded PDFs to avoid re-fetching/re-parsing
-      const pdfCache: Record<string, any> = {};
+      // Use string keys (url) but value is promise of PDFDocument
+      const pdfCache: Record<string, Promise<any>> = {};
+
+      const getSourcePdf = async (page: PdfPage) => {
+         if (!pdfCache[page.sourceUrl]) {
+            pdfCache[page.sourceUrl] = (async () => {
+                let arrayBuffer;
+                if (page.originalFile) {
+                    arrayBuffer = await page.originalFile.arrayBuffer();
+                } else {
+                    arrayBuffer = await fetch(page.sourceUrl).then(res => res.arrayBuffer());
+                }
+                return await PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
+            })();
+         }
+         return pdfCache[page.sourceUrl];
+      };
 
       for (const page of pages) {
         if (page.sourceType === 'pdf') {
-          let sourcePdf = pdfCache[page.sourceUrl];
-          
-          if (!sourcePdf) {
-            const arrayBuffer = await fetch(page.sourceUrl).then(res => res.arrayBuffer());
-            sourcePdf = await PDFDocument.load(arrayBuffer);
-            pdfCache[page.sourceUrl] = sourcePdf;
-          }
-
+          const sourcePdf = await getSourcePdf(page);
           const [copiedPage] = await newPdf.copyPages(sourcePdf, [page.originalIndex]);
           newPdf.addPage(copiedPage);
-
         } else {
            // Handle Image
-           const imageBytes = await fetch(page.sourceUrl).then(res => res.arrayBuffer());
+           // Prefer file buffer if available
+           let imageBytes;
+           if (page.originalFile) {
+               imageBytes = await page.originalFile.arrayBuffer();
+           } else {
+               imageBytes = await fetch(page.sourceUrl).then(res => res.arrayBuffer());
+           }
+
            let image;
            // Basic detection usually sufficient if extension is correct, but robust implementation checks headers.
            // Here assuming PNG/JPG/WebP based on what app allows.
@@ -198,7 +222,14 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
            try {
               image = await newPdf.embedPng(imageBytes);
            } catch {
-              image = await newPdf.embedJpg(imageBytes);
+              try {
+                  image = await newPdf.embedJpg(imageBytes);
+              } catch (e) {
+                  // If both fail, it might be unsupported format (like plain WebP without conversion layer).
+                  // For now, skip or log.
+                  console.warn("Could not embed image", page.sourceUrl);
+                  continue;
+              }
            }
            
            if (image) {
@@ -286,8 +317,15 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
       try {
         if (page.sourceType === 'pdf') {
             if (!window.pdfjsLib) return;
-            const response = await fetch(page.sourceUrl);
-            const arrayBuffer = await response.arrayBuffer();
+            
+            let arrayBuffer;
+            if (page.originalFile) {
+                arrayBuffer = await page.originalFile.arrayBuffer();
+            } else {
+                const response = await fetch(page.sourceUrl);
+                arrayBuffer = await response.arrayBuffer();
+            }
+
             const pdf = await window.pdfjsLib.getDocument(arrayBuffer).promise;
             
             const pdfPage = await pdf.getPage(page.originalIndex + 1);
