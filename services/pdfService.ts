@@ -63,18 +63,31 @@ export const generatePDF = async (groups: DocumentGroup[]): Promise<void> => {
     try {
       // Create a new PDF Document
       const pdfDoc = await PDFDocument.create();
+      let addedPageCount = 0;
 
       for (const item of group.items) {
         if (item.type === 'pdf') {
            // Handle PDF merging
            try {
-             const arrayBuffer = await fetch(item.url).then(res => res.arrayBuffer());
-             const srcDoc = await PDFDocument.load(arrayBuffer);
+             let arrayBuffer;
+             if (item.originalFile) {
+               // Prefer reading file directly if available
+               arrayBuffer = await item.originalFile.arrayBuffer();
+             } else {
+               // Fallback to fetching blob URL
+               arrayBuffer = await fetch(item.url).then(res => res.arrayBuffer());
+             }
+             
+             // Load with ignoreEncryption: true to handle PDFs with empty owner passwords
+             const srcDoc = await PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
              const copiedPages = await pdfDoc.copyPages(srcDoc, srcDoc.getPageIndices());
-             copiedPages.forEach((page: any) => pdfDoc.addPage(page));
+             copiedPages.forEach((page: any) => {
+               pdfDoc.addPage(page);
+               addedPageCount++;
+             });
            } catch (error) {
              console.error(`Error processing PDF ${item.name}:`, error);
-             // Continue to next item if one fails
+             alert(`Erro ao processar o arquivo PDF: ${item.name}. O arquivo pode estar corrompido ou protegido.`);
            }
         } else {
            // Handle Image
@@ -107,10 +120,17 @@ export const generatePDF = async (groups: DocumentGroup[]): Promise<void> => {
                width: finalWidth,
                height: finalHeight,
              });
+             addedPageCount++;
            } catch (error) {
              console.error(`Error processing image ${item.name}:`, error);
+             alert(`Erro ao processar imagem: ${item.name}`);
            }
         }
+      }
+
+      if (addedPageCount === 0) {
+        alert(`Nenhuma página foi gerada para o grupo "${group.title}". Verifique se os arquivos são válidos.`);
+        continue;
       }
 
       const pdfBytes = await pdfDoc.save();
