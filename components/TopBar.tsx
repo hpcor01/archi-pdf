@@ -110,14 +110,13 @@ const TopBar: React.FC<TopBarProps> = ({
       {/* Right Area: Main Actions */}
       <div className="flex items-center space-x-6">
         
-        {/* Batch Remove Background - Disabled for PDFs */}
+        {/* Batch Remove Background - Permanently Disabled (Coming Soon) */}
         <button 
-          onClick={() => !isPdfSelected && onRemoveBgBatch()}
-          disabled={isProcessing || isPdfSelected}
-          className={`flex items-center space-x-2 transition-all group ${isPdfSelected ? 'opacity-30 cursor-not-allowed grayscale' : 'text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 disabled:opacity-50'}`}
-          title={isPdfSelected ? (language === 'pt-BR' ? "Remoção de fundo não disponível para seleções com PDF" : "Background removal not available for selections with PDF") : t.removeBgBatch}
+          disabled={true}
+          className="flex items-center space-x-2 transition-all opacity-30 cursor-not-allowed grayscale text-gray-500 dark:text-gray-400"
+          title={language === 'pt-BR' ? "Remoção de fundo por IA (Em breve)" : "AI Background Removal (Coming soon)"}
         >
-          <div className={`p-2 rounded-lg transition-colors ${isPdfSelected ? 'bg-gray-100 dark:bg-gray-800' : 'bg-emerald-50 dark:bg-emerald-900/20 group-hover:bg-emerald-100 dark:group-hover:bg-emerald-900/40'}`}>
+          <div className="p-2 rounded-lg bg-gray-100 dark:bg-gray-800">
             <Eraser size={18} />
           </div>
           <span className="text-sm font-semibold whitespace-nowrap hidden lg:inline">{t.removeBgBatch}</span>
@@ -134,7 +133,7 @@ const TopBar: React.FC<TopBarProps> = ({
 
         <div className="h-6 w-px bg-gray-300 dark:bg-gray-700 mx-2"></div>
 
-        {/* OCR Switch Toggle - Refined with better Tailwind classes for visual state */}
+        {/* OCR Switch Toggle */}
         <div className="flex items-center space-x-3">
           <div className="flex flex-col items-end">
              <span className="text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase leading-none mb-1 tracking-widest">OCR AI</span>
