@@ -320,20 +320,8 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
   const handleZoomReset = () => setZoom(1);
 
   const handleRemoveBg = async () => {
-    if (isProcessing) return;
-    setIsProcessing(true);
-    try {
-      let sourceUrl = currentImage;
-      if (brightness !== 100 || contrast !== 100 || rotation !== 0) {
-          sourceUrl = await applyImageAdjustments(currentImage, brightness, contrast, rotation);
-      }
-      const newUrl = await removeBackground(sourceUrl);
-      pushToHistory(newUrl);
-    } catch (e) {
-      alert("Background removal failed.");
-    } finally {
-      setIsProcessing(false);
-    }
+    // Permanently disabled
+    return;
   };
 
   const handleApplyAdjustments = async () => {
@@ -438,9 +426,9 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                <button onClick={handleZoomReset} className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition ml-1" title={t.zoomReset}><Search size={16} /></button>
              </div>
 
-             <button onClick={handleUndo} disabled={currentIndex <= 0} className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white disabled:opacity-30 transition rounded hover:bg-gray-100 dark:hover:bg-gray-800"><Undo size={18} /></button>
-             <button onClick={handleRedo} disabled={currentIndex >= history.length - 1} className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white disabled:opacity-30 transition rounded hover:bg-gray-100 dark:hover:bg-gray-800"><Redo size={18} /></button>
-             <button onClick={handleReset} disabled={currentIndex === 0 && history.length === 1} className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white disabled:opacity-30 transition rounded hover:bg-gray-100 dark:hover:bg-gray-800"><RotateCcw size={18} /></button>
+             <button onClick={handleUndo} disabled={currentIndex <= 0} className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white disabled:opacity-30 transition rounded hover:bg-gray-100 dark:hover:bg-gray-800" title={t.eUndo}><Undo size={18} /></button>
+             <button onClick={handleRedo} disabled={currentIndex >= history.length - 1} className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white disabled:opacity-30 transition rounded hover:bg-gray-100 dark:hover:bg-gray-800" title={t.eRedo}><Redo size={18} /></button>
+             <button onClick={handleReset} disabled={currentIndex === 0 && history.length === 1} className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white disabled:opacity-30 transition rounded hover:bg-gray-100 dark:hover:bg-gray-800" title={t.eReset}><RotateCcw size={18} /></button>
              <div className="w-px h-6 bg-gray-300 dark:bg-gray-700 mx-2" />
              <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"><X /></button>
           </div>
@@ -451,12 +439,13 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
             <div className="space-y-4">
               <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">{t.imageTools}</div>
               
+              {/* Individual Remove BG Button - Permanently Disabled (Coming Soon) */}
               <button 
-                onClick={() => { setActiveTool('none'); handleRemoveBg(); }}
-                disabled={activeTool === 'crop'}
-                className="w-full flex items-center p-3 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition text-gray-700 dark:text-gray-200 disabled:opacity-50"
+                disabled={true}
+                className="w-full flex items-center p-3 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 opacity-50 cursor-not-allowed text-gray-400"
+                title={language === 'pt-BR' ? "Remoção de fundo por IA (Em breve)" : "AI Background Removal (Coming soon)"}
               >
-                <Eraser className="mr-3 text-emerald-500 dark:text-emerald-400" size={18} />
+                <Eraser className="mr-3 text-gray-400" size={18} />
                 {t.removeBg}
               </button>
 
