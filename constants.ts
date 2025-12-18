@@ -1,4 +1,3 @@
-
 import { Language } from './types';
 
 export const SUPPORTED_FORMATS = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg', 'application/pdf'];
@@ -57,6 +56,10 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     zoomIn: "Aumentar Zoom",
     zoomOut: "Diminuir Zoom",
     zoomReset: "Restaurar Zoom",
+    eUndo: "Desfazer",
+    eRedo: "Refazer",
+    eReset: "Reset",
+
     backToGrid: "Voltar para Grade",
     viewPage: "Visualizar Página",
     nextPage: "Próxima",
@@ -77,7 +80,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     splitPlaceholder: "Ex: 1-3, 5, 8-10",
     splitAction: "Dividir e Baixar",
     splitInvalid: "Intervalo inválido. Use formatos como 1-3 ou 5.",
-    comingSoon: "Em breve: Compressão de PDF, recorte ajustável ao formato da imagem (perspectiva) e remoção de fundo por IA.",
+    comingSoon: "Em breve: Compressão de PDF e remoção de fundo por IA.",
     useOCR: "OCR (Texto Pesquisável)",
     ocrWarning: "O OCR torna o processo muito mais lento",
     ocrProcessing: "Reconhecendo texto (OCR)..."
@@ -148,7 +151,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     splitPlaceholder: "Ex: 1-3, 5, 8-10",
     splitAction: "Split and Download",
     splitInvalid: "Invalid range. Use formats like 1-3 or 5.",
-    comingSoon: "Coming soon: PDF Compression, perspective-adjustable cropping, and AI background removal.",
+    comingSoon: "Coming soon: PDF Compression and AI background removal.",
     useOCR: "OCR (Searchable Text)",
     ocrWarning: "OCR makes the process much slower",
     ocrProcessing: "Recognizing text (OCR)..."
@@ -169,7 +172,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     editorTitle: "Editor de Imagen",
     pdfEditorTitle: "Editor de PDF",
     undo: "Deshacer",
-    redo: "Rehacer",
+    redo: "Refacer",
     reset: "Restaurar",
     cancel: "Cancelar",
     confirm: "Confirmar Edición",
@@ -219,7 +222,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     splitPlaceholder: "Ej: 1-3, 5, 8-10",
     splitAction: "Dividir y Descargar",
     splitInvalid: "Intervalo inválido. Use formatos como 1-3 o 5.",
-    comingSoon: "Próximamente: Compresión de PDF, recorte ajustable al formato de imagen (perspectiva) y eliminación de fondo por IA.",
+    comingSoon: "Próximamente: Compresión de PDF e eliminación de fondo por IA.",
     useOCR: "OCR (Texto buscable)",
     ocrWarning: "El OCR hace que el proceso sea mucho más lento",
     ocrProcessing: "Reconociendo texto (OCR)..."
@@ -289,8 +292,8 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     splitIntervals: "טווחי עמודים",
     splitPlaceholder: "למשל: 1-3, 5, 8-10",
     splitAction: "פצל והורד",
-    splitInvalid: "טווח לא תקין. השתמש בפורמט כמו 1-3 או 5.",
-    comingSoon: "Coming soon: PDF Compression, perspective-adjustable cropping, and AI background removal.",
+    splitInvalid: "טווח לא תקין. השתמש בפורמט כמו 1-3 ou 5.",
+    comingSoon: "Coming soon: PDF Compression and AI background removal.",
     useOCR: "OCR (טקסט ניתן לחיפוש)",
     ocrWarning: "OCR הופך את התהליך לאיטי יותר",
     ocrProcessing: "מזהה טקסט (OCR)..."
@@ -318,7 +321,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     removeBg: "Αφαίρεση φόντου",
     removeBgBatch: "Αφαίρεση φόντου (Επιλ.)",
     applyCrop: "Περικοπή",
-    manualCrop: "Χειροκίνητη περικοπή",
+    manualCrop: "Recorte Manual",
     cropInstructions: "Σχεδιάστε μια περιοχή για περικοπή. Σύρετε τις άκρες για προσαρμογή.",
     processing: "Επεξεργασία...",
     imageTools: "Εργαλεία Εικόνας",
@@ -361,7 +364,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     splitPlaceholder: "Π.χ.: 1-3, 5, 8-10",
     splitAction: "Διαχωρισμός και λήψη",
     splitInvalid: "Μη έγκυρο εύρος.",
-    comingSoon: "Coming soon: PDF Compression, perspective-adjustable cropping, and AI background removal.",
+    comingSoon: "Coming soon: PDF Compression and AI background removal.",
     useOCR: "OCR (Αναζητήσιμο κείμενο)",
     ocrWarning: "Το OCR καθυστερεί τη διαδικασία",
     ocrProcessing: "Αναγνώριση κειμένου (OCR)..."
