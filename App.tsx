@@ -330,10 +330,10 @@ const App = () => {
   const getChangelog = () => {
     if (language === 'pt-BR') {
         return [
+            "NOVO: Recorte Manual com Perspectiva (Correção de homografia)",
             "OCR Inteligente (Torna PDFs pesquisáveis)",
             "Funcionalidade de Divisão de PDF por intervalos",
             "Layout melhorado e correções de bugs",
-            "Adicionado rodapé na aplicação",
             "Αρχή PDF é capaz de ler e editar arquivos PDF",
             "É possível mesclar imagens a arquivos PDF",
             "Adicionado filtros de imagem",
@@ -341,10 +341,10 @@ const App = () => {
         ];
     }
     return [
+        "NEW: Manual Perspective Crop (Homography correction)",
         "Smart OCR (Makes PDFs searchable)",
         "PDF Splitting by page ranges",
         "Improved layout and bug fixes",
-        "Added footer to the application",
         "Αρχή PDF can read and edit PDF files",
         "Merge images with PDF files",
         "Added image filters",
@@ -417,7 +417,7 @@ const App = () => {
                  onClick={() => setShowVersionInfo(!showVersionInfo)} 
                  className="hover:text-emerald-500 transition font-medium underline decoration-dotted underline-offset-2"
                >
-                 Versão 2.1
+                 Versão 2.2
                </button>
              </p>
           </footer>
@@ -428,7 +428,7 @@ const App = () => {
              <div className="flex justify-between items-center mb-3">
                  <div className="flex items-center space-x-2 text-emerald-600 dark:text-emerald-400">
                     <Sparkles size={18} />
-                    <h3 className="font-bold text-base">Versão 2.1</h3>
+                    <h3 className="font-bold text-base">Versão 2.2</h3>
                  </div>
                  <button 
                    onClick={() => setShowVersionInfo(false)} 
