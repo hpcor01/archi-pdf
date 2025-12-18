@@ -1,16 +1,9 @@
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { X, Eraser, Check, Undo, RotateCcw, Redo, ZoomIn, ZoomOut, Search, Crop as CropIcon, Sliders, RotateCw } from 'lucide-react';
 import { ImageItem, Language } from '../types';
 import { removeBackground, applyImageAdjustments } from '../services/geminiService';
 import { TRANSLATIONS } from '../constants';
-
-interface EditorModalProps {
-  item: ImageItem;
-  isOpen: boolean;
-  onClose: () => void;
-  onUpdate: (updatedItem: ImageItem) => void;
-  language: Language;
-}
 
 type Tool = 'none' | 'crop' | 'adjust';
 type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
@@ -27,6 +20,14 @@ interface Rect {
   h: number;
 }
 
+interface EditorModalProps {
+  item: ImageItem;
+  isOpen: boolean;
+  onClose: () => void;
+  onUpdate: (updatedItem: ImageItem) => void;
+  language: Language;
+}
+
 const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpdate, language }) => {
   const t = TRANSLATIONS[language];
   
@@ -38,7 +39,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
   const [activeTool, setActiveTool] = useState<Tool>('crop'); 
   
   // Crop State
-  const [crop, setCrop] = useState<Rect | null>(null); // Stored in NATURAL image coordinates
+  const [crop, setCrop] = useState<Rect | null>(null); 
   const [isDragging, setIsDragging] = useState(false);
   const [dragAction, setDragAction] = useState<'create' | 'move' | 'resize' | null>(null);
   const [activeHandle, setActiveHandle] = useState<ResizeHandle | null>(null);
@@ -46,7 +47,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
   // Adjustments State
   const [brightness, setBrightness] = useState(100);
   const [contrast, setContrast] = useState(100);
-  const [rotation, setRotation] = useState(0); // Degrees
+  const [rotation, setRotation] = useState(0); 
   
   // Panning State
   const [isPanning, setIsPanning] = useState(false);
@@ -54,11 +55,9 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
   const panStartRef = useRef<Point>({ x: 0, y: 0 });
   const scrollStartRef = useRef<{ left: number, top: number }>({ left: 0, top: 0 });
 
-  // Refs for drag calculations
-  const dragStartPosRef = useRef<Point>({ x: 0, y: 0 }); // Screen coordinates
-  const cropStartRectRef = useRef<Rect | null>(null); // Natural coordinates
+  const dragStartPosRef = useRef<Point>({ x: 0, y: 0 }); 
+  const cropStartRectRef = useRef<Rect | null>(null); 
 
-  // Zoom State
   const [zoom, setZoom] = useState(1);
   
   const imageRef = useRef<HTMLImageElement>(null);
@@ -80,7 +79,6 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
     }
   }, [item, isOpen]);
 
-  // Spacebar Listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space' && !e.repeat) {
@@ -102,10 +100,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
     };
   }, [isPanning]);
 
-  // Derived state
   const currentImage = history[currentIndex] || item.url;
-
-  // --- Helpers ---
 
   const pushToHistory = (newUrl: string) => {
     const newHistory = history.slice(0, currentIndex + 1);
@@ -115,7 +110,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
     setCrop(null);
     setBrightness(100);
     setContrast(100);
-    setRotation(0); // Reset pending adjustments
+    setRotation(0); 
   };
 
   const normalizeRect = (r: Rect): Rect => {
@@ -133,8 +128,6 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
     if (rect.width === 0) return 1;
     return imageRef.current.naturalWidth / rect.width;
   };
-
-  // --- Interaction Handlers ---
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (isProcessing || !imageRef.current || !wrapperRef.current) return;
@@ -162,13 +155,11 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
     const relX = clientX - imgRect.left;
     const relY = clientY - imgRect.top;
     
-    // Convert to Natural
     const naturalX = relX * scale;
     const naturalY = relY * scale;
 
     if (activeTool === 'crop') {
       if (crop) {
-        // Project crop to screen coords
         const screenCrop = {
             x: crop.x / scale + imgRect.left,
             y: crop.y / scale + imgRect.top,
@@ -248,7 +239,6 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
         let newX = startRect.x + deltaX;
         let newY = startRect.y + deltaY;
 
-        // Clamp
         const normStart = normalizeRect(startRect); 
         newX = Math.max(0, Math.min(newX, imgW - normStart.w));
         newY = Math.max(0, Math.min(newY, imgH - normStart.h));
@@ -297,8 +287,6 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
     };
   }, [isDragging, isPanning, handleWindowMouseMove, handleWindowMouseUp]);
 
-  // --- Actions ---
-
   const handleUndo = () => {
     if (currentIndex > 0) {
       setCurrentIndex(prev => prev - 1);
@@ -336,7 +324,6 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
     setIsProcessing(true);
     try {
       let sourceUrl = currentImage;
-      // Apply pending adjustments before BG removal if any
       if (brightness !== 100 || contrast !== 100 || rotation !== 0) {
           sourceUrl = await applyImageAdjustments(currentImage, brightness, contrast, rotation);
       }
@@ -375,20 +362,9 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
     const ctx = canvas.getContext('2d');
     
     if (ctx) {
-      // NOTE: If rotation is present (via CSS), simple drawImage won't match visual crop.
-      // Crop should ideally be disabled if rotation != 0 or rotation should be applied first.
-      // For now, if adjustments are pending, we apply them implicitly? 
-      // Complexity: user has not clicked 'Apply' yet. 
-      // Decision: Warn or ignore filters for crop if not applied. 
-      // But we can try to apply basic filters.
-      
       if (brightness !== 100 || contrast !== 100) {
          ctx.filter = `brightness(${brightness}%) contrast(${contrast}%)`;
       }
-      
-      // If rotation is non-zero, the visual crop box does not match the image coordinates directly.
-      // We will skip rotation application here for crop tool simplicity, relying on user to 'Apply' rotation first.
-      
       ctx.drawImage(
         imageRef.current,
         norm.x, norm.y, norm.w, norm.h,
@@ -404,7 +380,6 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
     if (brightness !== 100 || contrast !== 100 || rotation !== 0) {
         finalUrl = await applyImageAdjustments(currentImage, brightness, contrast, rotation);
     }
-    // Crop logic at save time if active (and no rotation pending, as that complicates coords)
     if (activeTool === 'crop' && crop && rotation === 0) {
       const img = new Image();
       img.src = finalUrl;
@@ -452,7 +427,6 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
     >
       <div className="bg-white dark:bg-gray-900 w-[90vw] h-[90vh] rounded-lg flex flex-col border border-gray-300 dark:border-gray-700 shadow-2xl transition-colors duration-300" onClick={e => e.stopPropagation()}>
         
-        {/* Header */}
         <div className="h-14 flex items-center justify-between px-6 border-b border-gray-200 dark:border-gray-800">
           <h2 className="text-lg font-medium text-gray-900 dark:text-gray-200">{t.editorTitle}</h2>
           
@@ -472,16 +446,14 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
           </div>
         </div>
 
-        {/* Main Content */}
         <div className="flex-1 flex overflow-hidden">
-          {/* Sidebar */}
           <div className="w-64 bg-gray-50 dark:bg-gray-850 p-4 border-r border-gray-200 dark:border-gray-800 flex flex-col flex-shrink-0 z-20 overflow-y-auto">
             <div className="space-y-4">
               <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">{t.imageTools}</div>
               
               <button 
                 onClick={() => { setActiveTool('none'); handleRemoveBg(); }}
-                disabled={true || activeTool === 'crop'}
+                disabled={activeTool === 'crop'}
                 className="w-full flex items-center p-3 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition text-gray-700 dark:text-gray-200 disabled:opacity-50"
               >
                 <Eraser className="mr-3 text-emerald-500 dark:text-emerald-400" size={18} />
@@ -490,7 +462,6 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
 
               <div className="border-t border-gray-200 dark:border-gray-700 my-4" />
               
-              {/* Adjustments Tool */}
               <div className={`border rounded-lg p-3 transition ${activeTool === 'adjust' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'}`}>
                  <button 
                   onClick={() => setActiveTool(activeTool === 'adjust' ? 'none' : 'adjust')}
@@ -567,14 +538,13 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                  )}
               </div>
 
-              {/* Crop Tool */}
               <div className={`border rounded-lg p-3 transition ${activeTool === 'crop' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'}`}>
                  <button 
                   onClick={() => {
                     setActiveTool(activeTool === 'crop' ? 'none' : 'crop');
-                    setCrop(null); // Reset crop on toggle
+                    setCrop(null); 
                   }}
-                  disabled={rotation !== 0} // Disable crop if pending rotation exists
+                  disabled={rotation !== 0} 
                   className="w-full flex items-center text-left mb-2 text-gray-700 dark:text-gray-200 disabled:opacity-50"
                   title={rotation !== 0 ? "Aplique a rotação antes de recortar" : ""}
                  >
@@ -597,7 +567,6 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
             </div>
           </div>
 
-          {/* Canvas */}
           <div 
              className="flex-1 bg-gray-100 dark:bg-gray-950 flex overflow-auto relative select-none custom-scrollbar"
              ref={containerRef}
@@ -618,9 +587,6 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                   onMouseDown={handleMouseDown}
                   style={{
                     touchAction: 'none',
-                    // Note: Order matters. Scale then Rotate to keep zoom axis aligned, usually. 
-                    // However, here we want to rotate the whole zoomed view? 
-                    // Let's stick to standard transform order.
                     transform: `scale(${zoom}) rotate(${rotation}deg)`,
                     transformOrigin: 'center',
                     transition: isDragging ? 'none' : 'transform 0.2s ease-out'
@@ -630,7 +596,6 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                     ref={imageRef}
                     src={currentImage} 
                     alt="Editing" 
-                    // Prevent distortion by removing forced sizing logic
                     className="block max-w-full max-h-[75vh] w-auto h-auto object-contain"
                     style={{ 
                        filter: `brightness(${brightness}%) contrast(${contrast}%)`
@@ -638,7 +603,6 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                     draggable={false}
                   />
 
-                  {/* Crop UI */}
                   {crop && activeTool === 'crop' && (
                     <>
                       {(() => {
@@ -692,7 +656,6 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
           </div>
         </div>
 
-        {/* Footer */}
         <div className="h-16 border-t border-gray-200 dark:border-gray-800 flex items-center justify-end px-6 space-x-4 bg-white dark:bg-gray-900 transition-colors z-20">
            <button onClick={onClose} className="px-4 py-2 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition">{t.cancel}</button>
            <button onClick={handleSave} className="bg-emerald-500 hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white px-6 py-2 rounded font-medium flex items-center shadow-lg shadow-emerald-500/20 dark:shadow-emerald-900/20">
