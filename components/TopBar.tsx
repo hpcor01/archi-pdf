@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Globe, Moon, Sun, ChevronDown, Trash, Eraser, AlertTriangle } from 'lucide-react';
 import { AppSettings, Language, Theme } from '../types';
@@ -113,7 +114,7 @@ const TopBar: React.FC<TopBarProps> = ({
         <button 
           onClick={() => !isPdfSelected && onRemoveBgBatch()}
           disabled={isProcessing || isPdfSelected}
-          className={`flex items-center space-x-2 transition group ${isPdfSelected ? 'opacity-30 cursor-not-allowed' : 'text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 disabled:opacity-50'}`}
+          className={`flex items-center space-x-2 transition-all group ${isPdfSelected ? 'opacity-30 cursor-not-allowed grayscale' : 'text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 disabled:opacity-50'}`}
           title={isPdfSelected ? (language === 'pt-BR' ? "Remoção de fundo não disponível para seleções com PDF" : "Background removal not available for selections with PDF") : t.removeBgBatch}
         >
           <div className={`p-2 rounded-lg transition-colors ${isPdfSelected ? 'bg-gray-100 dark:bg-gray-800' : 'bg-emerald-50 dark:bg-emerald-900/20 group-hover:bg-emerald-100 dark:group-hover:bg-emerald-900/40'}`}>
@@ -133,17 +134,18 @@ const TopBar: React.FC<TopBarProps> = ({
 
         <div className="h-6 w-px bg-gray-300 dark:bg-gray-700 mx-2"></div>
 
-        {/* OCR Switch Toggle - Re-implemented as a button-based toggle */}
+        {/* OCR Switch Toggle - Refined with better Tailwind classes for visual state */}
         <div className="flex items-center space-x-3">
           <div className="flex flex-col items-end">
              <span className="text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase leading-none mb-1 tracking-widest">OCR AI</span>
              <button 
                 type="button"
                 onClick={handleOcrToggle}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none ${settings.useOCR ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none shadow-inner ${settings.useOCR ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}
+                aria-pressed={settings.useOCR}
              >
                 <span 
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ease-in-out ${settings.useOCR ? 'translate-x-6' : 'translate-x-1'}`}
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition-transform duration-200 ease-in-out ${settings.useOCR ? 'translate-x-6' : 'translate-x-1'}`}
                 />
              </button>
           </div>
