@@ -1,23 +1,15 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Eraser, Check, Undo, RotateCcw, Redo, ZoomIn, ZoomOut, Search, Crop as CropIcon, Sliders, RotateCw } from 'lucide-react';
+import { X, Eraser, Check, Undo, RotateCcw, Redo, ZoomIn, ZoomOut, Search, Crop as CropIcon, Sliders, RotateCw, Maximize } from 'lucide-react';
 import { ImageItem, Language } from '../types';
 import { removeBackground, applyImageAdjustments } from '../services/geminiService';
 import { TRANSLATIONS } from '../constants';
 
 type Tool = 'none' | 'crop' | 'adjust';
-type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 
 interface Point {
   x: number;
   y: number;
-}
-
-interface Rect {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
 }
 
 interface EditorModalProps {
@@ -31,47 +23,39 @@ interface EditorModalProps {
 const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpdate, language }) => {
   const t = TRANSLATIONS[language];
   
-  // History State
   const [history, setHistory] = useState<string[]>([]);
   const [currentIndex, setCurrentIndex] = useState(-1);
-  
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeTool, setActiveTool] = useState<Tool>('crop'); 
   
-  // Crop State
-  const [crop, setCrop] = useState<Rect | null>(null); 
+  // Perspective Crop State: 4 corners (TL, TR, BR, BL)
+  const [points, setPoints] = useState<Point[] | null>(null); 
   const [isDragging, setIsDragging] = useState(false);
-  const [dragAction, setDragAction] = useState<'create' | 'move' | 'resize' | null>(null);
-  const [activeHandle, setActiveHandle] = useState<ResizeHandle | null>(null);
+  const [dragInfo, setDragInfo] = useState<{ index: number; type: 'corner' | 'edge' } | null>(null);
   
-  // Adjustments State
   const [brightness, setBrightness] = useState(100);
   const [contrast, setContrast] = useState(100);
   const [rotation, setRotation] = useState(0); 
-  
-  // Panning State
+  const [zoom, setZoom] = useState(1);
   const [isPanning, setIsPanning] = useState(false);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
-  const panStartRef = useRef<Point>({ x: 0, y: 0 });
-  const scrollStartRef = useRef<{ left: number, top: number }>({ left: 0, top: 0 });
 
-  const dragStartPosRef = useRef<Point>({ x: 0, y: 0 }); 
-  const cropStartRectRef = useRef<Rect | null>(null); 
-
-  const [zoom, setZoom] = useState(1);
-  
   const imageRef = useRef<HTMLImageElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null); 
   const containerRef = useRef<HTMLDivElement>(null);
+  const panStartRef = useRef<Point>({ x: 0, y: 0 });
+  const scrollStartRef = useRef<{ left: number, top: number }>({ left: 0, top: 0 });
+  const dragStartPosRef = useRef<Point>({ x: 0, y: 0 }); 
+  const initialPointsRef = useRef<Point[] | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       setHistory([item.url]);
       setCurrentIndex(0);
-      setCrop(null);
+      setPoints(null);
       setIsDragging(false);
       setZoom(1);
-      setActiveTool('none');
+      setActiveTool('crop'); 
       setIsPanning(false);
       setBrightness(100);
       setContrast(100);
@@ -79,11 +63,23 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
     }
   }, [item, isOpen]);
 
+  // Initialize crop points when image loads
+  const handleImageLoad = () => {
+    if (!imageRef.current || points) return;
+    const w = imageRef.current.naturalWidth;
+    const h = imageRef.current.naturalHeight;
+    // Initial 80% inset
+    setPoints([
+      { x: w * 0.1, y: h * 0.1 }, // TL
+      { x: w * 0.9, y: h * 0.1 }, // TR
+      { x: w * 0.9, y: h * 0.9 }, // BR
+      { x: w * 0.1, y: h * 0.9 }  // BL
+    ]);
+  };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !e.repeat) {
-        setIsSpacePressed(true);
-      }
+      if (e.code === 'Space' && !e.repeat) setIsSpacePressed(true);
     };
     const handleKeyUp = (e: KeyboardEvent) => {
       if (e.code === 'Space') {
@@ -91,7 +87,6 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
         if (isPanning) setIsPanning(false); 
       }
     };
-
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     return () => {
@@ -107,31 +102,21 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
     newHistory.push(newUrl);
     setHistory(newHistory);
     setCurrentIndex(newHistory.length - 1);
-    setCrop(null);
+    setPoints(null); 
     setBrightness(100);
     setContrast(100);
     setRotation(0); 
   };
 
-  const normalizeRect = (r: Rect): Rect => {
-    return {
-      x: r.w < 0 ? r.x + r.w : r.x,
-      y: r.h < 0 ? r.y + r.h : r.y,
-      w: Math.abs(r.w),
-      h: Math.abs(r.h)
-    };
-  };
-
   const getClientToNaturalScale = () => {
-    if (!imageRef.current || !wrapperRef.current) return 1;
+    if (!imageRef.current) return 1;
     const rect = imageRef.current.getBoundingClientRect();
     if (rect.width === 0) return 1;
     return imageRef.current.naturalWidth / rect.width;
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (isProcessing || !imageRef.current || !wrapperRef.current) return;
-    
+    if (isProcessing || !imageRef.current || !points) return;
     e.preventDefault();
 
     if (isSpacePressed || activeTool === 'none') {
@@ -146,66 +131,40 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
         return;
     }
 
-    const imgRect = imageRef.current.getBoundingClientRect();
-    const scale = getClientToNaturalScale();
-
-    const clientX = e.clientX;
-    const clientY = e.clientY;
-    
-    const relX = clientX - imgRect.left;
-    const relY = clientY - imgRect.top;
-    
-    const naturalX = relX * scale;
-    const naturalY = relY * scale;
-
     if (activeTool === 'crop') {
-      if (crop) {
-        const screenCrop = {
-            x: crop.x / scale + imgRect.left,
-            y: crop.y / scale + imgRect.top,
-            w: crop.w / scale,
-            h: crop.h / scale
-        };
+      const imgRect = imageRef.current.getBoundingClientRect();
+      const scale = getClientToNaturalScale();
+      const clientX = e.clientX;
+      const clientY = e.clientY;
+      const handleRadius = 25 / zoom; 
 
-        const handleRadius = 15;
-        const handle = getHitHandle(clientX, clientY, screenCrop, handleRadius);
-
-        if (handle) {
-            setIsDragging(true);
-            setDragAction('resize');
-            setActiveHandle(handle);
-            dragStartPosRef.current = { x: clientX, y: clientY };
-            cropStartRectRef.current = { ...crop };
-            return;
-        }
-
-        const normalizedCrop = normalizeRect(crop);
-        const normX = normalizedCrop.x / scale;
-        const normY = normalizedCrop.y / scale;
-        const normW = normalizedCrop.w / scale;
-        const normH = normalizedCrop.h / scale;
-
-        if (
-            relX >= normX && 
-            relX <= normX + normW &&
-            relY >= normY &&
-            relY <= normY + normH
-        ) {
-            setIsDragging(true);
-            setDragAction('move');
-            dragStartPosRef.current = { x: clientX, y: clientY };
-            cropStartRectRef.current = { ...crop };
-            return;
+      // Check Corners
+      for (let i = 0; i < 4; i++) {
+        const px = points[i].x / scale + imgRect.left;
+        const py = points[i].y / scale + imgRect.top;
+        if (Math.hypot(clientX - px, clientY - py) < handleRadius) {
+          setIsDragging(true);
+          setDragInfo({ index: i, type: 'corner' });
+          dragStartPosRef.current = { x: clientX, y: clientY };
+          initialPointsRef.current = JSON.parse(JSON.stringify(points));
+          return;
         }
       }
 
-      setIsDragging(true);
-      setDragAction('create');
-      dragStartPosRef.current = { x: clientX, y: clientY };
-      
-      const startRect = { x: naturalX, y: naturalY, w: 0, h: 0 };
-      setCrop(startRect);
-      cropStartRectRef.current = startRect;
+      // Check Edges (Midpoints)
+      for (let i = 0; i < 4; i++) {
+        const p1 = points[i];
+        const p2 = points[(i + 1) % 4];
+        const midX = (p1.x + p2.x) / 2 / scale + imgRect.left;
+        const midY = (p1.y + p2.y) / 2 / scale + imgRect.top;
+        if (Math.hypot(clientX - midX, clientY - midY) < handleRadius) {
+          setIsDragging(true);
+          setDragInfo({ index: i, type: 'edge' });
+          dragStartPosRef.current = { x: clientX, y: clientY };
+          initialPointsRef.current = JSON.parse(JSON.stringify(points));
+          return;
+        }
+      }
     }
   };
 
@@ -218,63 +177,35 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
         return;
     }
 
-    if (!isDragging || !imageRef.current || !cropStartRectRef.current) return;
+    if (!isDragging || !points || !initialPointsRef.current || !dragInfo || !imageRef.current) return;
 
     const scale = getClientToNaturalScale();
-    const startPos = dragStartPosRef.current;
-    const startRect = cropStartRectRef.current;
-
-    const deltaX = (e.clientX - startPos.x) * scale;
-    const deltaY = (e.clientY - startPos.y) * scale;
-
+    const deltaX = (e.clientX - dragStartPosRef.current.x) * scale;
+    const deltaY = (e.clientY - dragStartPosRef.current.y) * scale;
+    const newPoints = JSON.parse(JSON.stringify(initialPointsRef.current));
     const imgW = imageRef.current.naturalWidth;
     const imgH = imageRef.current.naturalHeight;
 
-    if (dragAction === 'create') {
-        let newW = deltaX;
-        let newH = deltaY;
-        setCrop({ ...startRect, w: newW, h: newH });
-
-    } else if (dragAction === 'move') {
-        let newX = startRect.x + deltaX;
-        let newY = startRect.y + deltaY;
-
-        const normStart = normalizeRect(startRect); 
-        newX = Math.max(0, Math.min(newX, imgW - normStart.w));
-        newY = Math.max(0, Math.min(newY, imgH - normStart.h));
-
-        setCrop({ ...startRect, x: newX, y: newY });
-
-    } else if (dragAction === 'resize' && activeHandle) {
-        let { x, y, w, h } = startRect;
-
-        if (activeHandle.includes('e')) w += deltaX;
-        if (activeHandle.includes('w')) { x += deltaX; w -= deltaX; }
-        if (activeHandle.includes('s')) h += deltaY;
-        if (activeHandle.includes('n')) { y += deltaY; h -= deltaY; }
-
-        setCrop({ x, y, w, h });
+    if (dragInfo.type === 'corner') {
+      newPoints[dragInfo.index].x = Math.max(0, Math.min(imgW, newPoints[dragInfo.index].x + deltaX));
+      newPoints[dragInfo.index].y = Math.max(0, Math.min(imgH, newPoints[dragInfo.index].y + deltaY));
+    } else {
+      const idx1 = dragInfo.index;
+      const idx2 = (dragInfo.index + 1) % 4;
+      newPoints[idx1].x = Math.max(0, Math.min(imgW, newPoints[idx1].x + deltaX));
+      newPoints[idx1].y = Math.max(0, Math.min(imgH, newPoints[idx1].y + deltaY));
+      newPoints[idx2].x = Math.max(0, Math.min(imgW, newPoints[idx2].x + deltaX));
+      newPoints[idx2].y = Math.max(0, Math.min(imgH, newPoints[idx2].y + deltaY));
     }
 
-  }, [isDragging, dragAction, activeHandle, isPanning]);
+    setPoints(newPoints);
+  }, [isDragging, dragInfo, isPanning, points]);
 
   const handleWindowMouseUp = useCallback(() => {
-    if (isPanning) {
-        setIsPanning(false);
-    }
-    
-    if (isDragging) {
-        setIsDragging(false);
-        setDragAction(null);
-        setActiveHandle(null);
-        setCrop(prev => {
-            if (!prev) return null;
-            const norm = normalizeRect(prev);
-            if (norm.w < 5 || norm.h < 5) return null;
-            return norm;
-        });
-    }
-  }, [isDragging, isPanning]);
+    setIsPanning(false);
+    setIsDragging(false);
+    setDragInfo(null);
+  }, []);
 
   useEffect(() => {
     if (isDragging || isPanning) {
@@ -287,119 +218,90 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
     };
   }, [isDragging, isPanning, handleWindowMouseMove, handleWindowMouseUp]);
 
-  const handleUndo = () => {
-    if (currentIndex > 0) {
-      setCurrentIndex(prev => prev - 1);
-      setCrop(null);
-      setRotation(0);
-    }
+  const warpPerspective = (ctx: CanvasRenderingContext2D, img: HTMLImageElement, src: Point[], dst: Point[]) => {
+    const triangulate = (p1: Point, p2: Point, p3: Point, d1: Point, d2: Point, d3: Point) => {
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(d1.x, d1.y);
+      ctx.lineTo(d2.x, d2.y);
+      ctx.lineTo(d3.x, d3.y);
+      ctx.closePath();
+      ctx.clip();
+
+      const denom = (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+      if (Math.abs(denom) < 0.0001) { ctx.restore(); return; }
+
+      const a = ((d1.x - d3.x) * (p2.y - p3.y) - (d2.x - d3.x) * (p1.y - p3.y)) / denom;
+      const b = ((d2.x - d3.x) * (p1.x - p3.x) - (d1.x - d3.x) * (p2.x - p3.x)) / denom;
+      const c = d1.x - a * p1.x - b * p1.y;
+      const d = ((d1.y - d3.y) * (p2.y - p3.y) - (d2.y - d3.y) * (p1.y - p3.y)) / denom;
+      const e = ((d2.y - d3.y) * (p1.x - p3.x) - (d1.y - d3.y) * (p2.x - p3.x)) / denom;
+      const f = d1.y - d * p1.x - e * p1.y;
+
+      ctx.setTransform(a, d, b, e, c, f);
+      ctx.drawImage(img, 0, 0);
+      ctx.restore();
+    };
+    triangulate(src[0], src[1], src[3], dst[0], dst[1], dst[3]);
+    triangulate(src[1], src[2], src[3], dst[1], dst[2], dst[3]);
   };
 
-  const handleRedo = () => {
-    if (currentIndex < history.length - 1) {
-      setCurrentIndex(prev => prev + 1);
-      setCrop(null);
-      setRotation(0);
-    }
-  };
-
-  const handleReset = () => {
-    if (history.length > 0) {
-      setCurrentIndex(0);
-      setCrop(null);
-      setZoom(1);
-      setActiveTool('none');
-      setBrightness(100);
-      setContrast(100);
-      setRotation(0);
-    }
-  };
-
-  const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.1, 5));
-  const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.1, 0.1));
-  const handleZoomReset = () => setZoom(1);
-
-  const handleRemoveBg = async () => {
-    // Permanently disabled
-    return;
-  };
-
-  const handleApplyAdjustments = async () => {
-     if (isProcessing) return;
-     if (brightness === 100 && contrast === 100 && rotation === 0) return;
-     
-     setIsProcessing(true);
-     try {
-         const newUrl = await applyImageAdjustments(currentImage, brightness, contrast, rotation);
-         pushToHistory(newUrl);
-     } catch(e) {
-         console.error(e);
-     } finally {
-         setIsProcessing(false);
-     }
-  };
-
-  const handleApplyCrop = () => {
-    if (!crop || !imageRef.current) return;
-    const norm = normalizeRect(crop);
-    if (norm.w < 10 || norm.h < 10) return;
+  const executeCrop = async (): Promise<string> => {
+    if (!points || !imageRef.current) return currentImage;
+    
+    const wTop = Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
+    const wBottom = Math.hypot(points[2].x - points[3].x, points[2].y - points[3].y);
+    const hLeft = Math.hypot(points[3].x - points[0].x, points[3].y - points[0].y);
+    const hRight = Math.hypot(points[2].x - points[1].x, points[2].y - points[1].y);
+    
+    const targetW = Math.max(wTop, wBottom);
+    const targetH = Math.max(hLeft, hRight);
 
     const canvas = document.createElement('canvas');
-    canvas.width = norm.w;
-    canvas.height = norm.h;
+    canvas.width = targetW;
+    canvas.height = targetH;
     const ctx = canvas.getContext('2d');
     
     if (ctx) {
       if (brightness !== 100 || contrast !== 100) {
          ctx.filter = `brightness(${brightness}%) contrast(${contrast}%)`;
       }
-      ctx.drawImage(
-        imageRef.current,
-        norm.x, norm.y, norm.w, norm.h,
-        0, 0, norm.w, norm.h
-      );
-      pushToHistory(canvas.toDataURL());
+      const dst = [
+        { x: 0, y: 0 },
+        { x: targetW, y: 0 },
+        { x: targetW, y: targetH },
+        { x: 0, y: targetH }
+      ];
+      warpPerspective(ctx, imageRef.current, points, dst);
+      return canvas.toDataURL();
     }
-    setCrop(null);
+    return currentImage;
+  };
+
+  const handleApplyCrop = async () => {
+    setIsProcessing(true);
+    const newUrl = await executeCrop();
+    pushToHistory(newUrl);
+    setIsProcessing(false);
   };
 
   const handleSave = async () => {
+    setIsProcessing(true);
     let finalUrl = currentImage;
-    if (brightness !== 100 || contrast !== 100 || rotation !== 0) {
-        finalUrl = await applyImageAdjustments(currentImage, brightness, contrast, rotation);
-    }
-    if (activeTool === 'crop' && crop && rotation === 0) {
-      const img = new Image();
-      img.src = finalUrl;
-      await new Promise(r => img.onload = r);
-      
-      const norm = normalizeRect(crop);
-      if (norm.w > 5 && norm.h > 5) {
-        const canvas = document.createElement('canvas');
-        canvas.width = norm.w;
-        canvas.height = norm.h;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, norm.x, norm.y, norm.w, norm.h, 0, 0, norm.w, norm.h);
-          finalUrl = canvas.toDataURL();
+    
+    // Se a ferramenta de recorte estiver ativa, aplica o recorte no salvamento
+    if (activeTool === 'crop' && points) {
+        finalUrl = await executeCrop();
+    } else {
+        // Aplica ajustes caso ferramentas não tenham sido "comitadas"
+        if (brightness !== 100 || contrast !== 100 || rotation !== 0) {
+            finalUrl = await applyImageAdjustments(finalUrl, brightness, contrast, rotation);
         }
-      }
     }
+
     onUpdate({ ...item, url: finalUrl });
     onClose();
-  };
-
-  const getHitHandle = (mx: number, my: number, r: Rect, tol: number): ResizeHandle | null => {
-    const dist = (x1: number, y1: number, x2: number, y2: number) => Math.hypot(x2 - x1, y2 - y1);
-    if (dist(mx, my, r.x, r.y) < tol) return 'nw';
-    if (dist(mx, my, r.x + r.w, r.y) < tol) return 'ne';
-    if (dist(mx, my, r.x, r.y + r.h) < tol) return 'sw';
-    if (dist(mx, my, r.x + r.w, r.y + r.h) < tol) return 'se';
-    if (dist(mx, my, r.x + r.w/2, r.y) < tol) return 'n';
-    if (dist(mx, my, r.x + r.w/2, r.y + r.h) < tol) return 's';
-    if (dist(mx, my, r.x, r.y + r.h/2) < tol) return 'w';
-    if (dist(mx, my, r.x + r.w, r.y + r.h/2) < tol) return 'e';
-    return null;
+    setIsProcessing(false);
   };
 
   const getCursor = () => {
@@ -410,247 +312,231 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
   };
 
   return (
-    <div 
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm cursor-default"
-    >
-      <div className="bg-white dark:bg-gray-900 w-[90vw] h-[90vh] rounded-lg flex flex-col border border-gray-300 dark:border-gray-700 shadow-2xl transition-colors duration-300" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm cursor-default">
+      <div className="bg-white dark:bg-gray-900 w-[95vw] h-[95vh] rounded-2xl flex flex-col border border-gray-300 dark:border-gray-700 shadow-2xl transition-colors duration-300 overflow-hidden" onClick={e => e.stopPropagation()}>
         
-        <div className="h-14 flex items-center justify-between px-6 border-b border-gray-200 dark:border-gray-800">
-          <h2 className="text-lg font-medium text-gray-900 dark:text-gray-200">{t.editorTitle}</h2>
+        {/* Header */}
+        <div className="h-16 flex items-center justify-between px-6 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 z-50">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-emerald-500 rounded-lg text-white">
+              <Maximize size={20} />
+            </div>
+            <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">{t.editorTitle}</h2>
+          </div>
           
           <div className="flex items-center space-x-2">
              <div className="flex items-center space-x-1 mr-4 border-r border-gray-300 dark:border-gray-700 pr-4">
-               <button onClick={handleZoomOut} className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition" title={t.zoomOut}><ZoomOut size={18} /></button>
-               <span className="text-xs w-10 text-center text-gray-500 dark:text-gray-400 font-medium select-none">{Math.round(zoom * 100)}%</span>
-               <button onClick={handleZoomIn} className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition" title={t.zoomIn}><ZoomIn size={18} /></button>
-               <button onClick={handleZoomReset} className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition ml-1" title={t.zoomReset}><Search size={16} /></button>
+               <button onClick={() => setZoom(z => Math.max(0.2, z - 0.2))} className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition"><ZoomOut size={18} /></button>
+               <span className="text-xs w-12 text-center text-gray-500 dark:text-gray-400 font-bold">{Math.round(zoom * 100)}%</span>
+               <button onClick={() => setZoom(z => Math.min(5, z + 0.2))} className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition"><ZoomIn size={18} /></button>
              </div>
 
-             <button onClick={handleUndo} disabled={currentIndex <= 0} className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white disabled:opacity-30 transition rounded hover:bg-gray-100 dark:hover:bg-gray-800" title={t.eUndo}><Undo size={18} /></button>
-             <button onClick={handleRedo} disabled={currentIndex >= history.length - 1} className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white disabled:opacity-30 transition rounded hover:bg-gray-100 dark:hover:bg-gray-800" title={t.eRedo}><Redo size={18} /></button>
-             <button onClick={handleReset} disabled={currentIndex === 0 && history.length === 1} className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white disabled:opacity-30 transition rounded hover:bg-gray-100 dark:hover:bg-gray-800" title={t.eReset}><RotateCcw size={18} /></button>
+             <button onClick={() => currentIndex > 0 && setCurrentIndex(c => c - 1)} disabled={currentIndex <= 0} className="p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 transition rounded-lg"><Undo size={18} /></button>
+             <button onClick={() => currentIndex < history.length - 1 && setCurrentIndex(c => c + 1)} disabled={currentIndex >= history.length - 1} className="p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 transition rounded-lg"><Redo size={18} /></button>
              <div className="w-px h-6 bg-gray-300 dark:bg-gray-700 mx-2" />
-             <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"><X /></button>
+             <button onClick={onClose} className="p-2 text-gray-500 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500 rounded-full transition"><X /></button>
           </div>
         </div>
 
         <div className="flex-1 flex overflow-hidden">
-          <div className="w-64 bg-gray-50 dark:bg-gray-850 p-4 border-r border-gray-200 dark:border-gray-800 flex flex-col flex-shrink-0 z-20 overflow-y-auto">
-            <div className="space-y-4">
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">{t.imageTools}</div>
-              
-              {/* Individual Remove BG Button - Permanently Disabled (Coming Soon) */}
-              <button 
-                disabled={true}
-                className="w-full flex items-center p-3 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 opacity-50 cursor-not-allowed text-gray-400"
-                title={language === 'pt-BR' ? "Remoção de fundo por IA (Em breve)" : "AI Background Removal (Coming soon)"}
-              >
-                <Eraser className="mr-3 text-gray-400" size={18} />
-                {t.removeBg}
-              </button>
+          {/* Sidebar */}
+          <div className="w-72 bg-gray-50 dark:bg-gray-850 p-6 border-r border-gray-200 dark:border-gray-800 flex flex-col flex-shrink-0 z-20 overflow-y-auto">
+            <div className="space-y-6">
+              <div>
+                <div className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">{t.imageTools}</div>
+                
+                <button 
+                  disabled={true}
+                  className="w-full flex items-center p-4 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 opacity-40 cursor-not-allowed text-gray-400 mb-4"
+                  title="Em breve"
+                >
+                  <Eraser className="mr-3" size={20} />
+                  <span className="font-bold text-sm">{t.removeBg}</span>
+                </button>
 
-              <div className="border-t border-gray-200 dark:border-gray-700 my-4" />
-              
-              <div className={`border rounded-lg p-3 transition ${activeTool === 'adjust' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'}`}>
-                 <button 
-                  onClick={() => setActiveTool(activeTool === 'adjust' ? 'none' : 'adjust')}
-                  className="w-full flex items-center text-left mb-2 text-gray-700 dark:text-gray-200"
-                 >
-                   <Sliders className="mr-3 text-blue-500 dark:text-blue-400" size={18} />
-                   <span className="font-medium text-sm">Ajustes</span>
-                 </button>
-                 {activeTool === 'adjust' && (
-                    <div className="mt-3 space-y-4 animate-fade-in">
-                      <p className="text-xs text-gray-500 dark:text-gray-400">{t.adjustHelp}</p>
-                      
-                      <div>
-                        <div className="flex justify-between text-xs mb-1 text-gray-600 dark:text-gray-300">
-                            <span>{t.brightness}</span>
-                            <span>{brightness}%</span>
+                <div className={`border-2 rounded-xl p-4 transition-all mb-4 ${activeTool === 'adjust' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/10' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'}`}>
+                   <button 
+                    onClick={() => setActiveTool(activeTool === 'adjust' ? 'none' : 'adjust')}
+                    className="w-full flex items-center text-left text-gray-700 dark:text-gray-200"
+                   >
+                     <Sliders className={`mr-3 ${activeTool === 'adjust' ? 'text-emerald-500' : 'text-blue-500'}`} size={20} />
+                     <span className="font-bold text-sm">Ajustes Finos</span>
+                   </button>
+                   {activeTool === 'adjust' && (
+                      <div className="mt-5 space-y-5 animate-fade-in">
+                        <div>
+                          <div className="flex justify-between text-[10px] font-bold mb-2 text-gray-500 uppercase">
+                              <span>{t.brightness}</span>
+                              <span>{brightness}%</span>
+                          </div>
+                          <input type="range" min="0" max="200" value={brightness} onChange={(e) => setBrightness(parseInt(e.target.value))} className="w-full h-1.5 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-emerald-500" />
                         </div>
-                        <input 
-                            type="range" 
-                            min="0" 
-                            max="200" 
-                            value={brightness} 
-                            onChange={(e) => setBrightness(parseInt(e.target.value))} 
-                            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-emerald-500" 
-                        />
-                      </div>
-
-                      <div>
-                        <div className="flex justify-between text-xs mb-1 text-gray-600 dark:text-gray-300">
-                            <span>{t.contrast}</span>
-                            <span>{contrast}%</span>
+                        <div>
+                          <div className="flex justify-between text-[10px] font-bold mb-2 text-gray-500 uppercase">
+                              <span>{t.contrast}</span>
+                              <span>{contrast}%</span>
+                          </div>
+                          <input type="range" min="0" max="200" value={contrast} onChange={(e) => setContrast(parseInt(e.target.value))} className="w-full h-1.5 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-emerald-500" />
                         </div>
-                        <input 
-                            type="range" 
-                            min="0" 
-                            max="200" 
-                            value={contrast} 
-                            onChange={(e) => setContrast(parseInt(e.target.value))} 
-                            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-emerald-500" 
-                        />
+                        <div className="pt-2">
+                           <div className="text-[10px] font-bold mb-2 text-gray-500 uppercase">{t.rotate}</div>
+                           <div className="flex space-x-2">
+                               <button onClick={() => setRotation(r => r - 90)} className="flex-1 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 rounded-lg transition text-gray-600 dark:text-gray-300"><RotateCcw size={16} className="mx-auto" /></button>
+                               <button onClick={() => setRotation(r => r + 90)} className="flex-1 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 rounded-lg transition text-gray-600 dark:text-gray-300"><RotateCw size={16} className="mx-auto" /></button>
+                           </div>
+                        </div>
                       </div>
+                   )}
+                </div>
 
-                      <div className="pt-1">
-                         <div className="flex justify-between text-xs mb-1 text-gray-600 dark:text-gray-300">
-                            <span>{t.rotate}</span>
-                            <span>{rotation}°</span>
-                         </div>
-                         <div className="flex space-x-2">
-                             <button 
-                                onClick={() => setRotation(r => r - 90)}
-                                className="flex-1 py-1.5 flex items-center justify-center bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-700 dark:text-gray-200 transition"
-                                title="-90°"
-                             >
-                                <RotateCcw size={14} />
-                             </button>
-                             <button 
-                                onClick={() => setRotation(r => r + 90)}
-                                className="flex-1 py-1.5 flex items-center justify-center bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-700 dark:text-gray-200 transition"
-                                title="+90°"
-                             >
-                                <RotateCw size={14} />
-                             </button>
-                         </div>
+                <div className={`border-2 rounded-xl p-4 transition-all ${activeTool === 'crop' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/10' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'}`}>
+                   <button 
+                    onClick={() => {
+                      setActiveTool(activeTool === 'crop' ? 'none' : 'crop');
+                      if (!points) handleImageLoad();
+                    }}
+                    className="w-full flex items-center text-left text-gray-700 dark:text-gray-200"
+                   >
+                     <CropIcon className={`mr-3 ${activeTool === 'crop' ? 'text-emerald-500' : 'text-orange-500'}`} size={20} />
+                     <span className="font-bold text-sm">Recorte Manual</span>
+                   </button>
+                   {activeTool === 'crop' && (
+                      <div className="mt-4 space-y-3 animate-fade-in">
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400 font-medium italic leading-relaxed">Arraste os cantos para ajustar a perspectiva do documento de forma personalizada.</p>
                       </div>
-
-                      <button 
-                        onClick={handleApplyAdjustments}
-                        disabled={brightness === 100 && contrast === 100 && rotation === 0}
-                        className="w-full py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded text-xs font-medium disabled:opacity-50 transition"
-                      >
-                        {t.applyAdjustments}
-                      </button>
-                    </div>
-                 )}
+                   )}
+                </div>
               </div>
-
-              <div className={`border rounded-lg p-3 transition ${activeTool === 'crop' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'}`}>
-                 <button 
-                  onClick={() => {
-                    setActiveTool(activeTool === 'crop' ? 'none' : 'crop');
-                    setCrop(null); 
-                  }}
-                  disabled={rotation !== 0} 
-                  className="w-full flex items-center text-left mb-2 text-gray-700 dark:text-gray-200 disabled:opacity-50"
-                  title={rotation !== 0 ? "Aplique a rotação antes de recortar" : ""}
-                 >
-                   <CropIcon className="mr-3 text-orange-500 dark:text-orange-400" size={18} />
-                   <span className="font-medium text-sm">{t.manualCrop}</span>
-                 </button>
-                 {activeTool === 'crop' && (
-                    <div className="mt-3 space-y-3 animate-fade-in">
-                      <p className="text-xs text-gray-500 dark:text-gray-400">{t.cropInstructions}</p>
-                      <button 
-                        onClick={handleApplyCrop}
-                        disabled={!crop}
-                        className="w-full py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded text-xs font-medium disabled:opacity-50 transition"
-                      >
-                        {t.applyCrop}
-                      </button>
-                    </div>
-                 )}
-              </div>
+            </div>
+            
+            <div className="mt-auto pt-6 border-t border-gray-200 dark:border-gray-700">
+               <button onClick={handleSave} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-4 rounded-xl font-black text-sm uppercase tracking-widest shadow-xl shadow-emerald-500/20 transition-all active:scale-95 flex items-center justify-center">
+                 <Check size={20} className="mr-2" />
+                 {t.confirm}
+               </button>
             </div>
           </div>
 
+          {/* Canvas Area */}
           <div 
-             className="flex-1 bg-gray-100 dark:bg-gray-950 flex overflow-auto relative select-none custom-scrollbar"
+             className="flex-1 bg-gray-100 dark:bg-[#0a0a0c] flex overflow-auto relative select-none custom-scrollbar"
              ref={containerRef}
           >
-            <div className="min-w-full min-h-full flex items-center justify-center p-10">
+            {/* Magnifier */}
+            {isDragging && dragInfo && points && imageRef.current && (
+                <div className="absolute top-4 left-4 z-[100] w-32 h-32 rounded-full border-4 border-emerald-500 bg-black overflow-hidden shadow-2xl pointer-events-none">
+                    <div 
+                        style={{
+                            width: imageRef.current.naturalWidth,
+                            height: imageRef.current.naturalHeight,
+                            backgroundImage: `url(${currentImage})`,
+                            backgroundSize: `${imageRef.current.naturalWidth}px ${imageRef.current.naturalHeight}px`,
+                            backgroundPosition: `-${dragInfo.type === 'corner' ? points[dragInfo.index].x : (points[dragInfo.index].x + points[(dragInfo.index+1)%4].x)/2}px -${dragInfo.type === 'corner' ? points[dragInfo.index].y : (points[dragInfo.index].y + points[(dragInfo.index+1)%4].y)/2}px`,
+                            transform: 'scale(2) translate(32px, 32px)',
+                            filter: `brightness(${brightness}%) contrast(${contrast}%)`
+                        }}
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="w-px h-full bg-emerald-500/50"></div>
+                        <div className="h-px w-full bg-emerald-500/50"></div>
+                    </div>
+                </div>
+            )}
+
+            <div className="min-w-full min-h-full flex items-center justify-center p-20">
                 {isProcessing && (
-                   <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-white/50 dark:bg-black/50 backdrop-blur-sm">
-                      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-500 mb-4"></div>
-                      <span className="text-emerald-600 dark:text-emerald-400 font-medium animate-pulse">{t.processing}</span>
+                   <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/60 backdrop-blur-md">
+                      <div className="relative">
+                        <div className="animate-spin rounded-full h-20 w-20 border-t-4 border-b-4 border-emerald-500 shadow-emerald-500/40 shadow-2xl"></div>
+                        <Maximize className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-emerald-500 animate-pulse" size={24} />
+                      </div>
+                      <span className="mt-6 text-emerald-400 font-black tracking-widest uppercase text-sm animate-pulse">{t.processing}</span>
                    </div>
                 )}
                 
                 <div 
                   ref={wrapperRef}
-                  className={`relative inline-block border border-gray-300 dark:border-gray-700 shadow-xl 
+                  className={`relative inline-block border border-gray-300 dark:border-gray-700 shadow-2xl transition-transform duration-200
                     ${getCursor()}
-                    bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCIgZmlsbD0iI2YwZjBmMCI+PHJlY3Qgd2lkdGg9IjEwIiBoZWlnaHQ9IjEwIiBmaWxsPSIjZThlOGU4IiAvPjxyZWN0IHg9IjEwIiB5PSIxMCIgd2lkdGg9IjEwIiBoZWlnaHQ9IjEwIiBmaWxsPSIjZThlOGU4IiAvPjwvc3ZnPg==')] dark:bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCIgZmlsbD0iIzIyMjIyMiI+PHJlY3Qgd2lkdGg9IjEwIiBoZWlnaHQ9IjEwIiBmaWxsPSIjMzMzMzMzIiAvPjxyZWN0IHg9IjEwIiB5PSIxMCIgd2lkdGg9IjEwIiBoZWlnaHQ9IjEwIiBmaWxsPSIjMzMzMzMzIiAvPjwvc3ZnPg==')]`}
+                    bg-[#111]`}
                   onMouseDown={handleMouseDown}
                   style={{
                     touchAction: 'none',
                     transform: `scale(${zoom}) rotate(${rotation}deg)`,
-                    transformOrigin: 'center',
-                    transition: isDragging ? 'none' : 'transform 0.2s ease-out'
                   }}
                 >
                   <img 
                     ref={imageRef}
                     src={currentImage} 
                     alt="Editing" 
+                    onLoad={handleImageLoad}
                     className="block max-w-full max-h-[75vh] w-auto h-auto object-contain"
-                    style={{ 
-                       filter: `brightness(${brightness}%) contrast(${contrast}%)`
-                    }} 
+                    style={{ filter: `brightness(${brightness}%) contrast(${contrast}%)` }} 
                     draggable={false}
                   />
 
-                  {crop && activeTool === 'crop' && (
-                    <>
-                      {(() => {
-                          const norm = normalizeRect(crop);
+                  {points && activeTool === 'crop' && (
+                    <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
+                      <defs>
+                        <mask id="crop-mask">
+                           <rect width="100%" height="100%" fill="white" />
+                           <polygon 
+                              points={points.map(p => {
+                                const scale = getClientToNaturalScale();
+                                return `${p.x/scale},${p.y/scale}`;
+                              }).join(' ')} 
+                              fill="black" 
+                           />
+                        </mask>
+                      </defs>
+                      
+                      <rect width="100%" height="100%" fill="rgba(0,0,0,0.6)" mask="url(#crop-mask)" />
+                      
+                      <polygon 
+                        points={points.map(p => {
                           const scale = getClientToNaturalScale();
-                          
-                          const vx = norm.x / scale;
-                          const vy = norm.y / scale;
-                          const vw = norm.w / scale;
-                          const vh = norm.h / scale;
-                          
-                          return (
-                            <>
-                              <div className="absolute top-0 left-0 right-0 bg-black/60 pointer-events-none" style={{ height: vy }} />
-                              <div className="absolute left-0 right-0 bottom-0 bg-black/60 pointer-events-none" style={{ top: vy + vh }} />
-                              <div className="absolute left-0 bg-black/60 pointer-events-none" style={{ top: vy, height: vh, width: vx }} />
-                              <div className="absolute right-0 bg-black/60 pointer-events-none" style={{ top: vy, height: vh, left: vx + vw }} />
+                          return `${p.x/scale},${p.y/scale}`;
+                        }).join(' ')} 
+                        fill="transparent" 
+                        stroke="#00ffff" 
+                        strokeWidth="2"
+                        strokeDasharray="4"
+                      />
 
-                              <div 
-                                className="absolute border-2 border-emerald-500 cursor-move"
-                                style={{ left: vx, top: vy, width: vw, height: vh }}
-                              >
-                                 <div className="absolute inset-0 flex flex-col pointer-events-none opacity-50">
-                                    <div className="flex-1 border-b border-white/50"></div>
-                                    <div className="flex-1 border-b border-white/50"></div>
-                                    <div className="flex-1"></div>
-                                 </div>
-                                 <div className="absolute inset-0 flex pointer-events-none opacity-50">
-                                    <div className="flex-1 border-r border-white/50"></div>
-                                    <div className="flex-1 border-r border-white/50"></div>
-                                    <div className="flex-1"></div>
-                                 </div>
-
-                                 <div className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border border-emerald-500 rounded-full cursor-nw-resize z-10" />
-                                 <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border border-emerald-500 rounded-full cursor-ne-resize z-10" />
-                                 <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border border-emerald-500 rounded-full cursor-sw-resize z-10" />
-                                 <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border border-emerald-500 rounded-full cursor-se-resize z-10" />
-                                 
-                                 <div className="absolute -top-1.5 left-1/2 -ml-1.5 w-3 h-3 bg-white border border-emerald-500 rounded-full cursor-n-resize z-10" />
-                                 <div className="absolute -bottom-1.5 left-1/2 -ml-1.5 w-3 h-3 bg-white border border-emerald-500 rounded-full cursor-s-resize z-10" />
-                                 <div className="absolute top-1/2 -mt-1.5 -left-1.5 w-3 h-3 bg-white border border-emerald-500 rounded-full cursor-w-resize z-10" />
-                                 <div className="absolute top-1/2 -mt-1.5 -right-1.5 w-3 h-3 bg-white border border-emerald-500 rounded-full cursor-e-resize z-10" />
-                              </div>
-                            </>
+                      {(() => {
+                        const scale = getClientToNaturalScale();
+                        const elements = [];
+                        
+                        for (let i = 0; i < 4; i++) {
+                          const px = points[i].x / scale;
+                          const py = points[i].y / scale;
+                          elements.push(
+                            <g key={`corner-${i}`} className="pointer-events-auto cursor-pointer">
+                              <circle cx={px} cy={py} r="12" fill="rgba(0,255,255,0.3)" stroke="#00ffff" strokeWidth="2" />
+                              <circle cx={px} cy={py} r="4" fill="#00ffff" />
+                            </g>
                           );
+                        }
+
+                        for (let i = 0; i < 4; i++) {
+                          const p1 = points[i];
+                          const p2 = points[(i + 1) % 4];
+                          const mx = (p1.x + p2.x) / 2 / scale;
+                          const my = (p1.y + p2.y) / 2 / scale;
+                          elements.push(
+                            <g key={`mid-${i}`} className="pointer-events-auto cursor-pointer">
+                              <circle cx={mx} cy={my} r="8" fill="rgba(255,255,255,0.8)" stroke="#00ffff" strokeWidth="2" />
+                            </g>
+                          );
+                        }
+                        
+                        return elements;
                       })()}
-                    </>
+                    </svg>
                   )}
                 </div>
             </div>
           </div>
-        </div>
-
-        <div className="h-16 border-t border-gray-200 dark:border-gray-800 flex items-center justify-end px-6 space-x-4 bg-white dark:bg-gray-900 transition-colors z-20">
-           <button onClick={onClose} className="px-4 py-2 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition">{t.cancel}</button>
-           <button onClick={handleSave} className="bg-emerald-500 hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white px-6 py-2 rounded font-medium flex items-center shadow-lg shadow-emerald-500/20 dark:shadow-emerald-900/20">
-             <Check size={18} className="mr-2" />
-             {t.confirm}
-           </button>
         </div>
       </div>
     </div>
