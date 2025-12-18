@@ -81,6 +81,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     save: "Save",
     saving: "Saving...",
     total: "Total",
+    comingSoon: "Em breve: Compressão de PDF, recorte ajustável ao formato da imagem (perspectiva) e remoção de fundo por IA.",
     dragDrop: "Drag or add",
     dropHere: "Drop files here",
     addFiles: "Add files",
