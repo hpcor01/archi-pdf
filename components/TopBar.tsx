@@ -9,7 +9,6 @@ interface TopBarProps {
   onSave: () => void;
   onClearAll: () => void;
   onRemoveBgBatch: () => void;
-  useOCR: boolean;
   isSaving: boolean;
   isProcessing: boolean;
   isPdfSelected: boolean;
