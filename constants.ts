@@ -6,7 +6,7 @@ export const INITIAL_SETTINGS = {
   convertToPdf: true,
   saveSeparately: false,
   saveInGroup: false,
-  useOCR: false;
+  useOCR: false
 };
 
 export const TRANSLATIONS: Record<Language, Record<string, string>> = {
