@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
-import { Plus, X, Sparkles, Info } from 'lucide-react';
+import { Plus, X, Sparkles, Info, Users, ShieldCheck } from 'lucide-react';
 import TopBar from './components/TopBar';
 import DocumentColumn from './components/DocumentColumn';
 import EditorModal from './components/EditorModal';
@@ -9,7 +10,7 @@ import UpdateNotification from './components/UpdateNotification';
 import { DocumentGroup, AppSettings, ImageItem, Language, Theme } from './types';
 import { INITIAL_SETTINGS, TRANSLATIONS } from './constants';
 import { generatePDF } from './services/pdfService';
-import { removeBackground } from './services/geminiService';
+import { autoCropImage } from './services/cvService';
 
 const App = () => {
   const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
@@ -18,8 +19,11 @@ const App = () => {
   ]);
   const [editingItem, setEditingItem] = useState<{ docId: string, item: ImageItem } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false); // State for batch AI operations
+  const [isProcessing, setIsProcessing] = useState(false); // State for batch operations
   const [language, setLanguage] = useState<Language>('pt-BR');
+  
+  // Undo Logic for Batch Operations
+  const [batchHistory, setBatchHistory] = useState<DocumentGroup[] | null>(null);
   
   // Theme State with Persistence
   const [theme, setTheme] = useState<Theme>(() => {
@@ -40,8 +44,9 @@ const App = () => {
   // Update Availability State
   const [isUpdateAvailable, setIsUpdateAvailable] = useState(false);
   
-  // Version Info State
+  // Modals States
   const [showVersionInfo, setShowVersionInfo] = useState(false);
+  const [showAboutInfo, setShowAboutInfo] = useState(false);
 
   const t = TRANSLATIONS[language];
 
@@ -108,6 +113,7 @@ const App = () => {
 
   const handleClearAll = () => {
     setDocuments([{ id: Date.now().toString(), title: 'PDF 1', items: [], selected: false }]);
+    setBatchHistory(null);
   };
 
   const handleAddItem = async (docId: string, files: FileList) => {
@@ -121,6 +127,7 @@ const App = () => {
       newItems.push({
         id: Math.random().toString(36).substr(2, 9),
         url,
+        originalUrl: url, // Cache permanente do estado inicial
         originalFile: file,
         name: file.name,
         type,
@@ -156,6 +163,40 @@ const App = () => {
       }
       return doc;
     }));
+  };
+
+  /**
+   * Restores a single item to its absolute original state (as uploaded)
+   */
+  const handleResetToOriginal = (docId: string, itemId: string) => {
+    setDocuments(prev => prev.map(doc => {
+      if (doc.id !== docId) return doc;
+      return {
+        ...doc,
+        items: doc.items.map(item => {
+          if (item.id !== itemId) return item;
+          return { ...item, url: item.originalUrl, backupUrl: undefined };
+        })
+      };
+    }));
+    setToast({ visible: true, message: language === 'pt-BR' ? "Imagem restaurada ao original." : "Restored to original image.", type: 'success' });
+  };
+
+  /**
+   * Restores a single item to its state before the last batch operation
+   */
+  const handleRestoreItem = (docId: string, itemId: string) => {
+    setDocuments(prev => prev.map(doc => {
+      if (doc.id !== docId) return doc;
+      return {
+        ...doc,
+        items: doc.items.map(item => {
+          if (item.id !== itemId || !item.backupUrl) return item;
+          return { ...item, url: item.backupUrl, backupUrl: undefined };
+        })
+      };
+    }));
+    setToast({ visible: true, message: language === 'pt-BR' ? "Ação de lote desfeita para esta imagem." : "Batch action undone for this image.", type: 'success' });
   };
 
   const handleRotateItem = async (docId: string, itemId: string) => {
@@ -221,14 +262,14 @@ const App = () => {
     });
   };
 
-  const handleBatchRemoveBg = async () => {
+  const handleBatchAutoCrop = async () => {
     const docsToProcess = documents.filter(doc => doc.selected);
-    
     if (docsToProcess.length === 0) {
        alert(language === 'en' ? "Select columns to process." : "Selecione as colunas para processar.");
        return;
     }
 
+    setBatchHistory(JSON.parse(JSON.stringify(documents)));
     setIsProcessing(true);
 
     const tasks: { docId: string, itemId: string, url: string }[] = [];
@@ -244,7 +285,7 @@ const App = () => {
       if (!doc.selected) return doc;
       return {
         ...doc,
-        items: doc.items.map(item => item.type === 'image' ? { ...item, processing: true } : item)
+        items: doc.items.map(item => item.type === 'image' ? { ...item, processing: true, backupUrl: item.url } : item)
       };
     }));
 
@@ -252,8 +293,8 @@ const App = () => {
       let successCount = 0;
       for (const task of tasks) {
         try {
-          const newUrl = await removeBackground(task.url);
-          successCount++;
+          const newUrl = await autoCropImage(task.url);
+          if (newUrl !== task.url) successCount++;
           setDocuments(prev => prev.map(doc => {
              if (doc.id !== task.docId) return doc;
              return {
@@ -279,21 +320,28 @@ const App = () => {
         }
       }
       
-      if (successCount < tasks.length && tasks.length > 0) {
-        setToast({ visible: true, message: t.batchProcessError, type: 'error' });
+      if (successCount === 0 && tasks.length > 0) {
+        setToast({ visible: true, message: language === 'pt-BR' ? "Nenhum documento identificado automaticamente." : "No documents identified.", type: 'error' });
       } else {
-        setToast({ visible: true, message: "Processamento concluído!", type: 'success' });
+        setToast({ visible: true, message: language === 'pt-BR' ? "Recorte automático concluído!" : "Auto-crop completed!", type: 'success' });
       }
     } catch (e) {
-      console.error("Batch processing fatal error", e);
+      console.error("Batch processing error", e);
     } finally {
       setIsProcessing(false);
     }
   };
 
+  const handleUndoBatch = () => {
+    if (batchHistory) {
+      setDocuments(batchHistory);
+      setBatchHistory(null);
+      setToast({ visible: true, message: language === 'pt-BR' ? "Recortes revertidos." : "Crops reverted.", type: 'success' });
+    }
+  };
+
   const handleSave = async () => {
     const docsToSave = documents.filter(doc => doc.selected);
-
     if (docsToSave.length === 0) {
       alert(language === 'en' ? "Select at least one column to save." : "Selecione pelo menos uma coluna para salvar.");
       return;
@@ -303,9 +351,7 @@ const App = () => {
     try {
       await generatePDF(docsToSave, settings.useOCR);
       setToast({ visible: true, message: t.docSaved, type: 'success' });
-      setTimeout(() => {
-        handleClearAll();
-      }, 500);
+      setTimeout(() => { handleClearAll(); }, 500);
     } catch (e) {
       console.error(e);
       setToast({ visible: true, message: t.docSaveError, type: 'error' });
@@ -323,50 +369,60 @@ const App = () => {
   };
 
   const allSelected = documents.length > 0 && documents.every(d => d.selected);
-  
-  // Refined logic: disable if ANY selected column contains a PDF file
+  const hasSelection = documents.some(d => d.selected);
   const isPdfSelected = documents.some(doc => doc.selected && doc.items.some(item => item.type === 'pdf'));
 
   const getChangelog = () => {
     if (language === 'pt-BR') {
         return [
-            "NOVO: Recorte Manual com Perspectiva (Correção de homografia)",
+            "v2.3 - Cache inteligente de imagens para restauração individual completa",
+            "v2.3 - Refatoração do modal Sobre e Licenças",
+            "v2.2 - IA OpenCV 4.x para Recorte Automático Inteligente",
+            "v2.2 - Botão Desfazer para recortes em lote",
+            "Recorte Manual com Perspectiva (Correção de homografia)",
             "OCR Inteligente (Torna PDFs pesquisáveis)",
-            "Funcionalidade de Divisão de PDF por intervalos",
-            "Layout melhorado e correções de bugs",
             "Αρχή PDF é capaz de ler e editar arquivos PDF",
-            "É possível mesclar imagens a arquivos PDF",
-            "Adicionado filtros de imagem",
-            "Agora é possível girar a imagem no modal de edição"
+            "É possível mesclar imagens a arquivos PDF"
         ];
     }
     return [
-        "NEW: Manual Perspective Crop (Homography correction)",
+        "v2.3 - Intelligent image cache for complete individual restoration",
+        "v2.3 - About modal and Licenses refactoring",
+        "v2.2 - OpenCV 4.x AI for Intelligent Auto-Crop",
+        "v2.2 - Undo Button for batch crops",
+        "Manual Perspective Crop (Homography correction)",
         "Smart OCR (Makes PDFs searchable)",
-        "PDF Splitting by page ranges",
-        "Improved layout and bug fixes",
         "Αρχή PDF can read and edit PDF files",
-        "Merge images with PDF files",
-        "Added image filters",
-        "Rotate images directly in the image editor modal"
+        "Merge images with PDF files"
     ];
   };
 
+  const getLicenses = () => [
+    { name: "React", license: "MIT" },
+    { name: "Lucide React", license: "ISC" },
+    { name: "PDF-lib", license: "MIT" },
+    { name: "PDF.js", license: "Apache 2.0" },
+    { name: "Tesseract.js", license: "Apache 2.0" },
+    { name: "OpenCV.js", license: "Apache 2.0" },
+    { name: "Tailwind CSS", license: "MIT" }
+  ];
+
   return (
     <div className={theme}>
-      <div 
-        className={`flex flex-col h-screen w-screen bg-gray-100 dark:bg-gray-950 text-gray-900 dark:text-white font-sans transition-colors duration-300 relative`}
-      >
+      <div className={`flex flex-col h-screen w-screen bg-gray-100 dark:bg-gray-950 text-gray-900 dark:text-white font-sans transition-colors duration-300 relative`}>
         <TopBar 
           settings={settings} 
           updateSetting={handleUpdateSetting} 
           onSave={handleSave}
           onClearAll={handleClearAll}
-          onRemoveBgBatch={handleBatchRemoveBg}
+          onRemoveBgBatch={handleBatchAutoCrop}
+          onUndoBatch={handleUndoBatch}
+          canUndo={!!batchHistory}
           isSaving={isSaving}
           isProcessing={isProcessing}
           isPdfSelected={isPdfSelected}
           allSelected={allSelected}
+          hasSelection={hasSelection}
           onToggleSelectAll={handleToggleSelectAll}
           language={language}
           setLanguage={setLanguage}
@@ -376,7 +432,6 @@ const App = () => {
 
         <main className="flex-1 overflow-hidden p-4 sm:p-6 flex flex-col">
           <div className="flex-1 w-full border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-3xl relative flex flex-col overflow-hidden transition-colors dark:bg-[#232B3A]">
-            
             <div className="flex-1 overflow-x-auto overflow-y-hidden p-4 sm:p-6 custom-scrollbar">
               <div className="flex h-full"> 
                 {documents.map(doc => (
@@ -391,6 +446,8 @@ const App = () => {
                     onDeleteDoc={handleDeleteDocument}
                     onToggleSelection={handleToggleColumnSelection}
                     onRotateItem={handleRotateItem}
+                    onRestoreItem={handleRestoreItem}
+                    onResetToOriginal={handleResetToOriginal}
                     onMoveItem={handleMoveItem}
                     language={language}
                   />
@@ -399,11 +456,7 @@ const App = () => {
               </div>
             </div>
 
-            <button 
-              onClick={handleAddDocument}
-              className="absolute bottom-6 right-6 w-14 h-14 bg-emerald-500 hover:bg-emerald-400 rounded-full shadow-2xl flex items-center justify-center text-white transition transform hover:scale-105 z-30"
-              title="Nova Coluna"
-            >
+            <button onClick={handleAddDocument} className="absolute bottom-6 right-6 w-14 h-14 bg-emerald-500 hover:bg-emerald-400 rounded-full shadow-2xl flex items-center justify-center text-white transition transform hover:scale-105 z-30" title="Nova Coluna">
               <Plus size={32} />
             </button>
           </div>
@@ -413,11 +466,11 @@ const App = () => {
              <p>
                Αρχή PDF© {new Date().getFullYear()} - {t.rightsReserved}. |{' '}
                <a title="Help" href="mailto:ti@advocaciabichara.com.br" className="hover:text-emerald-500 transition">{t.supportLink}</a> |{' '}
-               <button 
-                 onClick={() => setShowVersionInfo(!showVersionInfo)} 
-                 className="hover:text-emerald-500 transition font-medium underline decoration-dotted underline-offset-2"
-               >
-                 Versão 2.2
+               <button onClick={() => { setShowAboutInfo(false); setShowVersionInfo(!showVersionInfo); }} className="hover:text-emerald-500 transition font-medium underline decoration-dotted underline-offset-2">
+                 {t.version} 2.3
+               </button> |{' '}
+               <button onClick={() => { setShowVersionInfo(false); setShowAboutInfo(!showAboutInfo); }} className="hover:text-emerald-500 transition font-medium underline decoration-dotted underline-offset-2">
+                 {t.about}
                </button>
              </p>
           </footer>
@@ -428,14 +481,9 @@ const App = () => {
              <div className="flex justify-between items-center mb-3">
                  <div className="flex items-center space-x-2 text-emerald-600 dark:text-emerald-400">
                     <Sparkles size={18} />
-                    <h3 className="font-bold text-base">Versão 2.2</h3>
+                    <h3 className="font-bold text-base">{t.version} 2.3</h3>
                  </div>
-                 <button 
-                   onClick={() => setShowVersionInfo(false)} 
-                   className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-                 >
-                   <X size={16}/>
-                 </button>
+                 <button onClick={() => setShowVersionInfo(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><X size={16}/></button>
              </div>
              <ul className="text-sm space-y-2 text-gray-600 dark:text-gray-300 list-disc pl-4 mb-4">
                  {getChangelog().map((feature, idx) => (
@@ -444,11 +492,37 @@ const App = () => {
              </ul>
              <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 rounded-lg flex items-start space-x-2">
                 <Info size={16} className="text-emerald-600 dark:text-emerald-400 mt-0.5 flex-shrink-0" />
-                <p className="text-xs text-emerald-800 dark:text-emerald-200 font-medium">
-                  {t.comingSoon}
-                </p>
+                <p className="text-xs text-emerald-800 dark:text-emerald-200 font-medium">{t.comingSoon}</p>
              </div>
-             <div className="absolute bottom-[-6px] left-1/2 transform -translate-x-1/2 w-3 h-3 bg-white dark:bg-gray-800 border-b border-r border-emerald-500/30 rotate-45"></div>
+          </div>
+        )}
+
+        {showAboutInfo && (
+          <div className="fixed bottom-16 left-1/2 transform -translate-x-1/2 bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-2xl border border-emerald-500/30 z-[60] w-80 sm:w-96 text-left transition-all duration-300 animate-slide-up overflow-hidden">
+             <div className="flex justify-between items-center mb-4 p-1">
+                 <div className="flex items-center space-x-2 text-emerald-600 dark:text-emerald-400">
+                    <Users size={18} />
+                    <h3 className="font-bold text-base">{t.aboutTitle}</h3>
+                 </div>
+                 <button onClick={() => setShowAboutInfo(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><X size={16}/></button>
+             </div>
+             <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
+                <section><p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">{t.developedBy} <strong>L. Stivan</strong> e <strong>Hugo Cordeiro</strong>.</p></section>
+                <section className="pt-2 border-t border-gray-100 dark:border-gray-700">
+                   <div className="flex items-center space-x-2 text-gray-500 dark:text-gray-400 mb-3">
+                      <ShieldCheck size={16} />
+                      <span className="text-xs font-bold uppercase tracking-wider">{t.openSourceLicenses}</span>
+                   </div>
+                   <div className="grid grid-cols-1 gap-2">
+                      {getLicenses().map((lib, idx) => (
+                        <div key={idx} className="flex justify-between items-center bg-gray-50 dark:bg-gray-900/50 p-2 rounded-lg border border-gray-100 dark:border-gray-800">
+                           <span className="text-xs font-medium text-gray-700 dark:text-gray-200">{lib.name}</span>
+                           <span className="text-[10px] font-black bg-gray-200 dark:bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded">{lib.license}</span>
+                        </div>
+                      ))}
+                   </div>
+                </section>
+             </div>
           </div>
         )}
 
@@ -459,32 +533,9 @@ const App = () => {
           onClose={() => setToast({ ...toast, visible: false })}
           language={language}
         />
-
-        <UpdateNotification 
-          isVisible={isUpdateAvailable}
-          onUpdate={handleUpdateApp}
-          language={language}
-        />
-
-        {editingItem && editingItem.item.type === 'image' && (
-          <EditorModal 
-            item={editingItem.item}
-            isOpen={!!editingItem}
-            onClose={() => setEditingItem(null)}
-            onUpdate={handleUpdateItem}
-            language={language}
-          />
-        )}
-
-        {editingItem && editingItem.item.type === 'pdf' && (
-          <PdfEditorModal
-            item={editingItem.item}
-            isOpen={!!editingItem}
-            onClose={() => setEditingItem(null)}
-            onUpdate={handleUpdateItem}
-            language={language}
-          />
-        )}
+        <UpdateNotification isVisible={isUpdateAvailable} onUpdate={handleUpdateApp} language={language} />
+        {editingItem && editingItem.item.type === 'image' && <EditorModal item={editingItem.item} isOpen={!!editingItem} onClose={() => setEditingItem(null)} onUpdate={handleUpdateItem} language={language} />}
+        {editingItem && editingItem.item.type === 'pdf' && <PdfEditorModal item={editingItem.item} isOpen={!!editingItem} onClose={() => setEditingItem(null)} onUpdate={handleUpdateItem} language={language} />}
       </div>
     </div>
   );
