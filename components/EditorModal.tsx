@@ -1,8 +1,8 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Eraser, Check, Undo, RotateCcw, Redo, ZoomIn, ZoomOut, Search, Crop as CropIcon, Sliders, RotateCw, Maximize } from 'lucide-react';
+import { X, Check, Undo, RotateCcw, Redo, ZoomIn, ZoomOut, Search, Crop as CropIcon, Sliders, RotateCw, Maximize, Sparkles } from 'lucide-react';
 import { ImageItem, Language } from '../types';
-import { removeBackground, applyImageAdjustments } from '../services/geminiService';
+import { detectDocumentCorners, applyPerspectiveCrop, applyImageAdjustments } from '../services/cvService';
 import { TRANSLATIONS } from '../constants';
 
 type Tool = 'none' | 'crop' | 'adjust';
@@ -63,18 +63,31 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
     }
   }, [item, isOpen]);
 
-  // Initialize crop points when image loads
-  const handleImageLoad = () => {
+  // Performs automatic detection of corners when image loads or modal opens
+  const handlePerformAutoDetection = async () => {
     if (!imageRef.current || points) return;
-    const w = imageRef.current.naturalWidth;
-    const h = imageRef.current.naturalHeight;
-    // Initial 80% inset
-    setPoints([
-      { x: w * 0.1, y: h * 0.1 }, // TL
-      { x: w * 0.9, y: h * 0.1 }, // TR
-      { x: w * 0.9, y: h * 0.9 }, // BR
-      { x: w * 0.1, y: h * 0.9 }  // BL
-    ]);
+    
+    setIsProcessing(true);
+    const detected = await detectDocumentCorners(currentImage);
+    
+    if (detected) {
+      setPoints(detected);
+    } else {
+      // Fallback to default 80% inset if detection fails
+      const w = imageRef.current.naturalWidth;
+      const h = imageRef.current.naturalHeight;
+      setPoints([
+        { x: w * 0.1, y: h * 0.1 }, // TL
+        { x: w * 0.9, y: h * 0.1 }, // TR
+        { x: w * 0.9, y: h * 0.9 }, // BR
+        { x: w * 0.1, y: h * 0.9 }  // BL
+      ]);
+    }
+    setIsProcessing(false);
+  };
+
+  const handleImageLoad = () => {
+    handlePerformAutoDetection();
   };
 
   useEffect(() => {
@@ -218,90 +231,24 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
     };
   }, [isDragging, isPanning, handleWindowMouseMove, handleWindowMouseUp]);
 
-  const warpPerspective = (ctx: CanvasRenderingContext2D, img: HTMLImageElement, src: Point[], dst: Point[]) => {
-    const triangulate = (p1: Point, p2: Point, p3: Point, d1: Point, d2: Point, d3: Point) => {
-      ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(d1.x, d1.y);
-      ctx.lineTo(d2.x, d2.y);
-      ctx.lineTo(d3.x, d3.y);
-      ctx.closePath();
-      ctx.clip();
-
-      const denom = (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
-      if (Math.abs(denom) < 0.0001) { ctx.restore(); return; }
-
-      const a = ((d1.x - d3.x) * (p2.y - p3.y) - (d2.x - d3.x) * (p1.y - p3.y)) / denom;
-      const b = ((d2.x - d3.x) * (p1.x - p3.x) - (d1.x - d3.x) * (p2.x - p3.x)) / denom;
-      const c = d1.x - a * p1.x - b * p1.y;
-      const d = ((d1.y - d3.y) * (p2.y - p3.y) - (d2.y - d3.y) * (p1.y - p3.y)) / denom;
-      const e = ((d2.y - d3.y) * (p1.x - p3.x) - (d1.y - d3.y) * (p2.x - p3.x)) / denom;
-      const f = d1.y - d * p1.x - e * p1.y;
-
-      ctx.setTransform(a, d, b, e, c, f);
-      ctx.drawImage(img, 0, 0);
-      ctx.restore();
-    };
-    triangulate(src[0], src[1], src[3], dst[0], dst[1], dst[3]);
-    triangulate(src[1], src[2], src[3], dst[1], dst[2], dst[3]);
-  };
-
-  const executeCrop = async (): Promise<string> => {
-    if (!points || !imageRef.current) return currentImage;
-    
-    const wTop = Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
-    const wBottom = Math.hypot(points[2].x - points[3].x, points[2].y - points[3].y);
-    const hLeft = Math.hypot(points[3].x - points[0].x, points[3].y - points[0].y);
-    const hRight = Math.hypot(points[2].x - points[1].x, points[2].y - points[1].y);
-    
-    const targetW = Math.max(wTop, wBottom);
-    const targetH = Math.max(hLeft, hRight);
-
-    const canvas = document.createElement('canvas');
-    canvas.width = targetW;
-    canvas.height = targetH;
-    const ctx = canvas.getContext('2d');
-    
-    if (ctx) {
-      if (brightness !== 100 || contrast !== 100) {
-         ctx.filter = `brightness(${brightness}%) contrast(${contrast}%)`;
-      }
-      const dst = [
-        { x: 0, y: 0 },
-        { x: targetW, y: 0 },
-        { x: targetW, y: targetH },
-        { x: 0, y: targetH }
-      ];
-      warpPerspective(ctx, imageRef.current, points, dst);
-      return canvas.toDataURL();
-    }
-    return currentImage;
-  };
-
-  const handleApplyCrop = async () => {
-    setIsProcessing(true);
-    const newUrl = await executeCrop();
-    pushToHistory(newUrl);
-    setIsProcessing(false);
-  };
-
   const handleSave = async () => {
     setIsProcessing(true);
     let finalUrl = currentImage;
     
-    // Se a ferramenta de recorte estiver ativa, aplica o recorte no salvamento
-    if (activeTool === 'crop' && points) {
-        finalUrl = await executeCrop();
-    } else {
-        // Aplica ajustes caso ferramentas não tenham sido "comitadas"
-        if (brightness !== 100 || contrast !== 100 || rotation !== 0) {
-            finalUrl = await applyImageAdjustments(finalUrl, brightness, contrast, rotation);
-        }
+    try {
+      if (activeTool === 'crop' && points) {
+          finalUrl = await applyPerspectiveCrop(finalUrl, points);
+      } else if (brightness !== 100 || contrast !== 100 || rotation !== 0) {
+          finalUrl = await applyImageAdjustments(finalUrl, brightness, contrast, rotation);
+      }
+      onUpdate({ ...item, url: finalUrl });
+      onClose();
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao processar imagem.");
+    } finally {
+      setIsProcessing(false);
     }
-
-    onUpdate({ ...item, url: finalUrl });
-    onClose();
-    setIsProcessing(false);
   };
 
   const getCursor = () => {
@@ -340,20 +287,35 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
 
         <div className="flex-1 flex overflow-hidden">
           {/* Sidebar */}
-          <div className="w-72 bg-gray-50 dark:bg-gray-850 p-6 border-r border-gray-200 dark:border-gray-800 flex flex-col flex-shrink-0 z-20 overflow-y-auto">
+          <div className="w-72 bg-gray-50 dark:bg-gray-850 p-6 border-r border-gray-200 dark:border-gray-700 flex flex-col flex-shrink-0 z-20 overflow-y-auto">
             <div className="space-y-6">
               <div>
-                <div className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">{t.imageTools}</div>
+                <div className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em] mb-4">{t.imageTools}</div>
                 
-                <button 
-                  disabled={true}
-                  className="w-full flex items-center p-4 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 opacity-40 cursor-not-allowed text-gray-400 mb-4"
-                  title="Em breve"
-                >
-                  <Eraser className="mr-3" size={20} />
-                  <span className="font-bold text-sm">{t.removeBg}</span>
-                </button>
+                {/* Manual Crop UI */}
+                <div className={`border-2 rounded-xl p-4 transition-all mb-4 ${activeTool === 'crop' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/10' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'}`}>
+                   <button 
+                    onClick={() => {
+                      setActiveTool(activeTool === 'crop' ? 'none' : 'crop');
+                      if (!points) handleImageLoad();
+                    }}
+                    className="w-full flex items-center text-left text-gray-700 dark:text-gray-200"
+                   >
+                     <CropIcon className={`mr-3 ${activeTool === 'crop' ? 'text-emerald-500' : 'text-orange-500'}`} size={20} />
+                     <span className="font-bold text-sm">Recorte Manual</span>
+                   </button>
+                   {activeTool === 'crop' && (
+                      <div className="mt-4 space-y-4 animate-fade-in">
+                        <div className="w-full flex items-center justify-start text-[10px] text-emerald-600 dark:text-emerald-400 font-black uppercase tracking-widest">
+                            <Sparkles size={12} className="mr-1.5" />
+                            <span>Auto-Detecção Ativa</span>
+                        </div>
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400 font-medium italic leading-relaxed">Arraste os cantos detectados pelo OpenCV para ajustar a perspectiva final do documento.</p>
+                      </div>
+                   )}
+                </div>
 
+                {/* Adjustments Tool UI */}
                 <div className={`border-2 rounded-xl p-4 transition-all mb-4 ${activeTool === 'adjust' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/10' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'}`}>
                    <button 
                     onClick={() => setActiveTool(activeTool === 'adjust' ? 'none' : 'adjust')}
@@ -389,28 +351,11 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                    )}
                 </div>
 
-                <div className={`border-2 rounded-xl p-4 transition-all ${activeTool === 'crop' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/10' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'}`}>
-                   <button 
-                    onClick={() => {
-                      setActiveTool(activeTool === 'crop' ? 'none' : 'crop');
-                      if (!points) handleImageLoad();
-                    }}
-                    className="w-full flex items-center text-left text-gray-700 dark:text-gray-200"
-                   >
-                     <CropIcon className={`mr-3 ${activeTool === 'crop' ? 'text-emerald-500' : 'text-orange-500'}`} size={20} />
-                     <span className="font-bold text-sm">Recorte Manual</span>
-                   </button>
-                   {activeTool === 'crop' && (
-                      <div className="mt-4 space-y-3 animate-fade-in">
-                        <p className="text-[11px] text-gray-500 dark:text-gray-400 font-medium italic leading-relaxed">Arraste os cantos para ajustar a perspectiva do documento de forma personalizada.</p>
-                      </div>
-                   )}
-                </div>
               </div>
             </div>
             
             <div className="mt-auto pt-6 border-t border-gray-200 dark:border-gray-700">
-               <button onClick={handleSave} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-4 rounded-xl font-black text-sm uppercase tracking-widest shadow-xl shadow-emerald-500/20 transition-all active:scale-95 flex items-center justify-center">
+               <button onClick={handleSave} disabled={isProcessing} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-4 rounded-xl font-black text-sm uppercase tracking-widest shadow-xl shadow-emerald-500/20 transition-all active:scale-95 flex items-center justify-center disabled:opacity-50">
                  <Check size={20} className="mr-2" />
                  {t.confirm}
                </button>
