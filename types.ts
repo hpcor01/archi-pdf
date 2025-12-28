@@ -1,6 +1,8 @@
+
 export interface ImageItem {
   id: string;
-  url: string; // Blob URL or Base64
+  url: string; // URL atual (com edições)
+  originalUrl: string; // Cache da imagem original (sem edições)
   originalFile?: File;
   name: string;
   type: 'image' | 'pdf';
@@ -8,6 +10,7 @@ export interface ImageItem {
   height?: number;
   selected: boolean;
   processing?: boolean; // True if AI is working on it
+  backupUrl?: string; // URL da última operação (para desfazer lote)
 }
 
 export interface DocumentGroup {
