@@ -7,6 +7,7 @@
 declare global {
   interface Window {
     cv: any;
+    cvReady?: boolean;
   }
 }
 
@@ -17,20 +18,31 @@ interface Point {
 
 /**
  * Ensures OpenCV is loaded before executing a task.
+ * Increased timeout to 30s to handle slow connections on production/Vercel.
  */
-const waitForCV = async (retries = 100): Promise<void> => {
-  if (window.cv && window.cv.imread && window.cv.Mat) return;
-  if (retries <= 0) throw new Error("OpenCV.js não pôde ser carregado. Verifique se o script no index.html está acessível.");
+const waitForCV = async (retries = 300): Promise<void> => {
+  // Check both window.cv existence and the ready flag from Module.onRuntimeInitialized
+  if (window.cv && window.cv.imread && window.cv.Mat && (window.cvReady !== false)) return;
+  
+  if (retries <= 0) {
+    throw new Error("OpenCV.js não pôde ser carregado. Verifique sua conexão ou se o script no index.html está acessível.");
+  }
+  
   await new Promise(resolve => setTimeout(resolve, 100));
   return waitForCV(retries - 1);
 };
 
 /**
  * Detects document corners with an advanced computer vision pipeline.
- * Fallback to minimal area rectangle if 4-point polygon detection fails.
  */
 export const detectDocumentCorners = async (imageUrl: string): Promise<Point[] | null> => {
-  await waitForCV();
+  try {
+    await waitForCV();
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
+  
   const cv = window.cv;
 
   return new Promise((resolve) => {
@@ -70,13 +82,12 @@ export const detectDocumentCorners = async (imageUrl: string): Promise<Point[] |
         for (let i = 0; i < contours.size(); ++i) {
           const cnt = contours.get(i);
           const area = cv.contourArea(cnt);
-          if (area < (resized.rows * resized.cols * 0.15)) continue; // Threshold for document size
+          if (area < (resized.rows * resized.cols * 0.15)) continue; 
 
           const perimeter = cv.arcLength(cnt, true);
           const approx = new cv.Mat();
           cv.approxPolyDP(cnt, approx, 0.02 * perimeter, true);
 
-          // CASE A: Perfect 4-point polygon found
           if (approx.rows === 4 && area > maxArea) {
             maxArea = area;
             bestPoints = [];
@@ -87,7 +98,6 @@ export const detectDocumentCorners = async (imageUrl: string): Promise<Point[] |
               });
             }
           } 
-          // CASE B: Fallback - use minAreaRect for largest contour if not 4-points
           else if (area > maxArea && !bestPoints) {
              const rect = cv.minAreaRect(cnt);
              const vertices = cv.RotatedRect.points(rect);
@@ -98,13 +108,11 @@ export const detectDocumentCorners = async (imageUrl: string): Promise<Point[] |
                    y: Math.round(vertices[j].y / scale)
                 });
              }
-             // We don't update maxArea yet because we prefer a 4-point approx if one shows up later
              bestPoints = fallbackPoints;
           }
           approx.delete();
         }
 
-        // 5. Final Corner Sorting (TL, TR, BR, BL)
         if (bestPoints) {
           const sums = bestPoints.map(p => p.x + p.y);
           const diffs = bestPoints.map(p => p.y - p.x);
@@ -117,13 +125,12 @@ export const detectDocumentCorners = async (imageUrl: string): Promise<Point[] |
           bestPoints = sorted;
         }
 
-        // Cleanup
         src.delete(); resized.delete(); gray.delete(); blurred.delete(); 
         edged.delete(); contours.delete(); hierarchy.delete(); kernel.delete();
         
         resolve(bestPoints);
       } catch (err) {
-        console.error("OpenCV Error:", err);
+        console.error("OpenCV processing error:", err);
         resolve(null);
       }
     };
@@ -208,7 +215,7 @@ export const applyImageAdjustments = async (
             const ctx = canvas.getContext('2d');
             if (!ctx) return;
 
-            const rads = rotation * Math.PI / 180;
+            const rads = (rotation % 360) * Math.PI / 180;
             const sin = Math.abs(Math.sin(rads));
             const cos = Math.abs(Math.cos(rads));
             const newWidth = img.width * cos + img.height * sin;
