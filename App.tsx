@@ -100,11 +100,11 @@ const App = () => {
   };
 
   const handleRenameDocument = (id: string, name: string) => {
-    setDocuments(documents.map(d => d.id === id ? { ...d, title: name } : d));
+    setDocuments(documents.map(d => id === d.id ? { ...d, title: name } : d));
   };
 
   const handleToggleColumnSelection = (id: string, selected: boolean) => {
-    setDocuments(documents.map(d => d.id === id ? { ...d, selected } : d));
+    setDocuments(documents.map(d => id === d.id ? { ...d, selected } : d));
   };
 
   const handleToggleSelectAll = (selected: boolean) => {
@@ -165,9 +165,6 @@ const App = () => {
     }));
   };
 
-  /**
-   * Restores a single item to its absolute original state (as uploaded)
-   */
   const handleResetToOriginal = (docId: string, itemId: string) => {
     setDocuments(prev => prev.map(doc => {
       if (doc.id !== docId) return doc;
@@ -182,9 +179,6 @@ const App = () => {
     setToast({ visible: true, message: language === 'pt-BR' ? "Imagem restaurada ao original." : "Restored to original image.", type: 'success' });
   };
 
-  /**
-   * Restores a single item to its state before the last batch operation
-   */
   const handleRestoreItem = (docId: string, itemId: string) => {
     setDocuments(prev => prev.map(doc => {
       if (doc.id !== docId) return doc;
@@ -375,22 +369,20 @@ const App = () => {
   const getChangelog = () => {
     if (language === 'pt-BR') {
         return [
-            "v2.3 - Cache inteligente de imagens para restauração individual completa",
-            "v2.3 - Refatoração do modal Sobre e Licenças",
-            "v2.2 - IA OpenCV 4.x para Recorte Automático Inteligente",
-            "v2.2 - Botão Desfazer para recortes em lote",
-            "Recorte Manual com Perspectiva (Correção de homografia)",
+            "v2.3 - Recorte Manual com Perspectiva (Correção de homografia)",
+            "v2.3 - Botão Desfazer para recortes em lote",
+            "IA OpenCV 4.x para Recorte Automático Inteligente",
+            "Cache inteligente de imagens para restauração individual completa",
             "OCR Inteligente (Torna PDFs pesquisáveis)",
             "Αρχή PDF é capaz de ler e editar arquivos PDF",
             "É possível mesclar imagens a arquivos PDF"
         ];
     }
     return [
-        "v2.3 - Intelligent image cache for complete individual restoration",
-        "v2.3 - About modal and Licenses refactoring",
-        "v2.2 - OpenCV 4.x AI for Intelligent Auto-Crop",
-        "v2.2 - Undo Button for batch crops",
-        "Manual Perspective Crop (Homography correction)",
+        "v2.3 - Manual Perspective Crop (Homography correction)",
+        "v2.3 - Undo Button for batch crops",
+        "OpenCV 4.x AI for Intelligent Auto-Crop",
+        "Intelligent image cache for complete individual restoration",
         "Smart OCR (Makes PDFs searchable)",
         "Αρχή PDF can read and edit PDF files",
         "Merge images with PDF files"
@@ -465,7 +457,7 @@ const App = () => {
              <p>Αρχή - {t.footerQuote}</p>
              <p>
                Αρχή PDF© {new Date().getFullYear()} - {t.rightsReserved}. |{' '}
-               <a title="Help" href="mailto:ti@advocaciabichara.com.br" className="hover:text-emerald-500 transition">{t.supportLink}</a> |{' '}
+               <a title="Help" target="_blank" rel="noopener noreferrer" href="https://app.pipefy.com/public/form/d_5r27Kf" className="hover:text-emerald-500 transition">{t.supportLink}</a> |{' '}
                <button onClick={() => { setShowAboutInfo(false); setShowVersionInfo(!showVersionInfo); }} className="hover:text-emerald-500 transition font-medium underline decoration-dotted underline-offset-2">
                  {t.version} 2.3
                </button> |{' '}
@@ -481,7 +473,7 @@ const App = () => {
              <div className="flex justify-between items-center mb-3">
                  <div className="flex items-center space-x-2 text-emerald-600 dark:text-emerald-400">
                     <Sparkles size={18} />
-                    <h3 className="font-bold text-base">{t.version} 2.3</h3>
+                    <h3 className="font-bold text-base">{t.version} 3</h3>
                  </div>
                  <button onClick={() => setShowVersionInfo(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><X size={16}/></button>
              </div>
