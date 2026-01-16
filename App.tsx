@@ -307,7 +307,7 @@ const App = () => {
                Αρχή PDF© {new Date().getFullYear()} - {t.rightsReserved}. |{' '}
                <a target="_blank" rel="noopener noreferrer" href="https://app.pipefy.com/public/form/d_5r27Kf" className="hover:text-emerald-500 transition">{t.supportLink}</a> |{' '}
                <button onClick={() => setShowVersionInfo(!showVersionInfo)} className="hover:text-emerald-500 transition font-medium underline decoration-dotted underline-offset-2">
-                 Versão 2.2
+                 Versão 2.3
                </button>
              </p>
           </footer>
