@@ -10,8 +10,6 @@ export const INITIAL_SETTINGS = {
   useOCR: false,
 };
 
-// Added missing translations for 'es', 'el', and 'he' to fulfill the Language type requirement.
-// Added eUndo, eRedo, and eReset to all languages for consistency with pt-BR.
 export const TRANSLATIONS: Record<Language, Record<string, string>> = {
   'pt-BR': {
     selectAll: "Selecionar todos",
@@ -83,7 +81,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     splitPlaceholder: "Ex: 1-3, 5, 8-10",
     splitAction: "Dividir e Baixar",
     splitInvalid: "Intervalo inválido. Use formatos como 1-3 ou 5.",
-    comingSoon: "Em breve: Compressão de PDF.",
+    comingSoon: "Em breve: Compressão de PDF e Digitalização (Scanner).",
     useOCR: "OCR (Texto Pesquisável)",
     ocrWarning: "O OCR torna o processo muito mais lento",
     ocrProcessing: "Reconhecendo texto (OCR)...",
@@ -163,7 +161,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     splitPlaceholder: "Ex: 1-3, 5, 8-10",
     splitAction: "Split and Download",
     splitInvalid: "Invalid range. Use formats like 1-3 or 5.",
-    comingSoon: "Coming soon: PDF Compression.",
+    comingSoon: "Coming soon: PDF Compression and Document Scanning.",
     useOCR: "OCR (Searchable Text)",
     ocrWarning: "OCR makes the process much slower",
     ocrProcessing: "Recognizing text (OCR)...",
@@ -230,7 +228,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     batchProcessError: "Error al procesar algunas imágenes.",
     rightsReserved: "Todos los derechos reservados",
     supportLink: "Haga clic aquí para obtener ayuda",
-    footerQuote: '"Y no nos cansemos de hacer el bien, pues a su tiempo segaremos" — Gálatas 6:9',
+    footerQuote: '"Y no nos cansemos de hacer el bien, pues a su tempo segaremos" — Gálatas 6:9',
     brightness: "Brillo",
     contrast: "Contraste",
     adjustHelp: "Ajuste el contraste para ayudar a eliminar el fondo.",
@@ -243,7 +241,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     splitPlaceholder: "Ej: 1-3, 5, 8-10",
     splitAction: "Dividir y descargar",
     splitInvalid: "Rango inválido. Use formatos como 1-3 o 5.",
-    comingSoon: "Próximamente: Compresión de PDF.",
+    comingSoon: "Próximamente: Compresión de PDF y Escaneo de documentos.",
     useOCR: "OCR (Texto buscable)",
     ocrWarning: "El OCR hace que el proceso sea mucho más lento",
     ocrProcessing: "Reconocimiento de texto (OCR)...",
@@ -251,7 +249,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     aboutTitle: "Acerca de Αρχή PDF",
     developedBy: "Creado y desarrollado por",
     openSourceLicenses: "Licencias de código abierto",
-    version: "Versión"
+    version: "Versão"
   },
   'el': {
     selectAll: "Επιλογή όλων",
@@ -323,7 +321,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     splitPlaceholder: "Πχ: 1-3, 5, 8-10",
     splitAction: "Διαίρεση και λήψη",
     splitInvalid: "Μη έγκυρο εύρος. Χρησιμοποιήστε μορφές όπως 1-3 ή 5.",
-    comingSoon: "Σύντομα κοντά σας: Συμπίεση PDF.",
+    comingSoon: "Σύντομα κοντά σας: Συμπίεση PDF και Σάρωση εγγράφων.",
     useOCR: "OCR (Αναζητήσιμο κείμενο)",
     ocrWarning: "Το OCR καθυστερεί σημαντικά τη διαδικασία",
     ocrProcessing: "Αναγνώριση κειμένου (OCR)...",
@@ -403,7 +401,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     splitPlaceholder: "למשל: 1-3, 5, 8-10",
     splitAction: "פצל והורד",
     splitInvalid: "טווח לא תקין. השתמש בפורמטים כמו 1-3 או 5.",
-    comingSoon: "בבקרוב: דחיסת קבצי PDF.",
+    comingSoon: "בבקרוב: דחיסת קבצי PDF וסריקת מסמכים.",
     useOCR: "OCR (טקסט שניתן לחיפוש)",
     ocrWarning: "OCR הופך את התהליך לאיטי משמעותית",
     ocrProcessing: "מזהה טקסט (OCR)...",
