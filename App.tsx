@@ -473,7 +473,7 @@ const App = () => {
              <div className="flex justify-between items-center mb-3">
                  <div className="flex items-center space-x-2 text-emerald-600 dark:text-emerald-400">
                     <Sparkles size={18} />
-                    <h3 className="font-bold text-base">{t.version} 3</h3>
+                    <h3 className="font-bold text-base">{t.version} 2.3</h3>
                  </div>
                  <button onClick={() => setShowVersionInfo(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><X size={16}/></button>
              </div>
