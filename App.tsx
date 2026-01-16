@@ -253,9 +253,9 @@ const App = () => {
 
   const getChangelog = () => {
     return language === 'pt-BR' ? [
-      "v2.2 - NOVO: Recorte Manual com Perspectiva (Correção de homografia)",
-      "v2.2 - Melhoria na IA de Detecção Automática (OpenCV)",
-      "v2.2 - Botão Desfazer para recortes em lote",
+      "v2.3 - NOVO: Recorte Manual com Perspectiva (Correção de homografia)",
+      "v2.3 - Melhoria na IA de Detecção Automática (OpenCV)",
+      "v2.3 - Botão Desfazer para recortes em lote",
       "OCR Inteligente integrado",
       "Suporte a arquivos PDF nativos"
     ] : [
