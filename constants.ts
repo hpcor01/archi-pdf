@@ -138,9 +138,6 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     zoomIn: "Zoom In",
     zoomOut: "Zoom Out",
     zoomReset: "Reset Zoom",
-    eUndo: "Undo",
-    eRedo: "Redo",
-    eReset: "Reset",
     backToGrid: "Back to Grid",
     viewPage: "View Page",
     nextPage: "Next",
@@ -218,9 +215,6 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     zoomIn: "Acercar",
     zoomOut: "Alejar",
     zoomReset: "Restablecer zoom",
-    eUndo: "Deshacer",
-    eRedo: "Rehacer",
-    eReset: "Reiniciar",
     backToGrid: "Volver a la cuadrícula",
     viewPage: "Ver página",
     nextPage: "Siguiente",
@@ -249,7 +243,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     aboutTitle: "Acerca de Αρχή PDF",
     developedBy: "Creado y desarrollado por",
     openSourceLicenses: "Licencias de código abierto",
-    version: "Versão"
+    version: "Versión"
   },
   'el': {
     selectAll: "Επιλογή όλων",
@@ -378,9 +372,6 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     zoomIn: "התקרב",
     zoomOut: "התרחק",
     zoomReset: "אפס זום",
-    eUndo: "בטל",
-    eRedo: "בצע שוב",
-    eReset: "אפס",
     backToGrid: "חזור לרשת",
     viewPage: "צפה בעמוד",
     nextPage: "הבא",
