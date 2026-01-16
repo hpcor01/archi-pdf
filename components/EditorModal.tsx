@@ -156,56 +156,81 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
       <div className="bg-white dark:bg-gray-900 w-[95vw] h-[95vh] rounded-2xl flex flex-col border border-gray-300 dark:border-gray-700 shadow-2xl overflow-hidden">
         <div className="h-16 flex items-center justify-between px-6 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 z-50">
           <div className="flex items-center space-x-3">
-            <div className="p-2 bg-emerald-500 rounded-lg text-white"><Maximize size={20} /></div>
-            <h2 className="text-lg font-bold">{t.editorTitle}</h2>
+            <div className="p-2 bg-emerald-500 rounded-lg text-white">
+              <Maximize size={20} />
+            </div>
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white">{t.editorTitle}</h2>
           </div>
           <div className="flex items-center space-x-2">
-             <div className="flex items-center space-x-1 border-r pr-4">
-               <button onClick={() => setZoom(z => Math.max(0.2, z - 0.2))} className="p-2 hover:bg-gray-100 rounded transition"><ZoomOut size={18} /></button>
-               <span className="text-xs w-12 text-center font-bold">{Math.round(zoom * 100)}%</span>
-               <button onClick={() => setZoom(z => Math.min(5, z + 0.2))} className="p-2 hover:bg-gray-100 rounded transition"><ZoomIn size={18} /></button>
+             <div className="flex items-center space-x-1 border-r pr-4 border-gray-200 dark:border-gray-700">
+               <button onClick={() => setZoom(z => Math.max(0.2, z - 0.2))} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition text-gray-600 dark:text-gray-400"><ZoomOut size={18} /></button>
+               <span className="text-xs w-12 text-center font-bold text-gray-700 dark:text-gray-300">{Math.round(zoom * 100)}%</span>
+               <button onClick={() => setZoom(z => Math.min(5, z + 0.2))} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition text-gray-600 dark:text-gray-400"><ZoomIn size={18} /></button>
              </div>
-             <button onClick={onClose} className="p-2 hover:bg-red-50 hover:text-red-500 rounded-full transition"><X /></button>
+             <button onClick={onClose} className="p-2 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20 rounded-full transition text-gray-400"><X /></button>
           </div>
         </div>
         <div className="flex-1 flex overflow-hidden">
-          <div className="w-72 bg-gray-50 dark:bg-gray-850 p-6 border-r flex flex-col z-20 overflow-y-auto">
-            <div className="space-y-6">
-              <div className={`border-2 rounded-xl p-4 mb-4 ${activeTool === 'crop' ? 'border-emerald-500 bg-emerald-50' : 'bg-white'}`}>
+          <div className="w-72 bg-gray-50 dark:bg-gray-850 p-6 border-r border-gray-200 dark:border-gray-800 flex flex-col z-20 overflow-y-auto">
+            <div className="space-y-4">
+              <div className={`border-2 rounded-xl p-4 transition-all ${activeTool === 'crop' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'bg-white dark:bg-gray-800 border-transparent'}`}>
                    <button onClick={() => setActiveTool(activeTool === 'crop' ? 'none' : 'crop')} className="w-full flex items-center text-left">
-                     <CropIcon className={`mr-3 ${activeTool === 'crop' ? 'text-emerald-500' : 'text-orange-500'}`} size={20} />
-                     <span className="font-bold text-sm">Recorte Manual</span>
+                     <CropIcon className={`mr-3 ${activeTool === 'crop' ? 'text-emerald-600' : 'text-gray-400'}`} size={20} />
+                     <span className={`font-bold text-sm ${activeTool === 'crop' ? 'text-emerald-900 dark:text-emerald-100' : 'text-gray-600 dark:text-gray-400'}`}>Recorte Manual</span>
                    </button>
                    {activeTool === 'crop' && (
-                      <div className="mt-4 animate-fade-in"><p className="text-[11px] text-gray-500 italic">Arraste os cantos detectados para ajustar a perspectiva.</p></div>
+                      <div className="mt-4 animate-fade-in"><p className="text-[11px] text-emerald-800/70 dark:text-emerald-200/50 italic leading-relaxed">Arraste os cantos detectados para ajustar a perspectiva.</p></div>
                    )}
               </div>
-              <div className={`border-2 rounded-xl p-4 ${activeTool === 'adjust' ? 'border-emerald-500 bg-emerald-50' : 'bg-white'}`}>
+              <div className={`border-2 rounded-xl p-4 transition-all ${activeTool === 'adjust' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'bg-white dark:bg-gray-800 border-transparent'}`}>
                    <button onClick={() => setActiveTool(activeTool === 'adjust' ? 'none' : 'adjust')} className="w-full flex items-center text-left">
-                     <Sliders className="mr-3 text-blue-500" size={20} />
-                     <span className="font-bold text-sm">Ajustes</span>
+                     <Sliders className={`mr-3 ${activeTool === 'adjust' ? 'text-emerald-600' : 'text-gray-400'}`} size={20} />
+                     <span className={`font-bold text-sm ${activeTool === 'adjust' ? 'text-emerald-900 dark:text-emerald-100' : 'text-gray-600 dark:text-gray-400'}`}>Ajustes</span>
                    </button>
                    {activeTool === 'adjust' && (
-                      <div className="mt-5 space-y-5">
-                        <input type="range" min="0" max="200" value={brightness} onChange={(e) => setBrightness(parseInt(e.target.value))} className="w-full accent-emerald-500" />
-                        <input type="range" min="0" max="200" value={contrast} onChange={(e) => setContrast(parseInt(e.target.value))} className="w-full accent-emerald-500" />
-                        <div className="flex space-x-2"><button onClick={() => setRotation(r => r - 90)} className="flex-1 py-2 bg-gray-100 rounded"><RotateCcw size={16} className="mx-auto" /></button>
-                        <button onClick={() => setRotation(r => r + 90)} className="flex-1 py-2 bg-gray-100 rounded"><RotateCw size={16} className="mx-auto" /></button></div>
+                      <div className="mt-5 space-y-5 animate-fade-in">
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-[10px] font-bold text-emerald-800 dark:text-emerald-200 uppercase"><span>Brilho</span><span>{brightness}%</span></div>
+                          <input type="range" min="0" max="200" value={brightness} onChange={(e) => setBrightness(parseInt(e.target.value))} className="w-full accent-emerald-500 h-1.5 bg-emerald-200 dark:bg-emerald-900 rounded-lg appearance-none cursor-pointer" />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-[10px] font-bold text-emerald-800 dark:text-emerald-200 uppercase"><span>Contraste</span><span>{contrast}%</span></div>
+                          <input type="range" min="0" max="200" value={contrast} onChange={(e) => setContrast(parseInt(e.target.value))} className="w-full accent-emerald-500 h-1.5 bg-emerald-200 dark:bg-emerald-900 rounded-lg appearance-none cursor-pointer" />
+                        </div>
+                        <div className="flex space-x-2 pt-2 border-t border-emerald-100 dark:border-emerald-800">
+                          <button onClick={() => setRotation(r => r - 90)} className="flex-1 py-2 bg-white dark:bg-gray-700 border border-emerald-200 dark:border-emerald-800 rounded-lg hover:bg-emerald-100 transition shadow-sm text-emerald-600"><RotateCcw size={16} className="mx-auto" /></button>
+                          <button onClick={() => setRotation(r => r + 90)} className="flex-1 py-2 bg-white dark:bg-gray-700 border border-emerald-200 dark:border-emerald-800 rounded-lg hover:bg-emerald-100 transition shadow-sm text-emerald-600"><RotateCw size={16} className="mx-auto" /></button>
+                        </div>
                       </div>
                    )}
               </div>
             </div>
-            <div className="mt-auto pt-6 border-t"><button onClick={handleSave} className="w-full bg-emerald-500 text-white py-4 rounded-xl font-black text-sm uppercase shadow-xl hover:bg-emerald-600 transition flex items-center justify-center"><Check size={20} className="mr-2" />{t.confirm}</button></div>
+            <div className="mt-auto pt-6 border-t border-gray-200 dark:border-gray-800">
+              <button onClick={handleSave} className="w-full bg-emerald-500 text-white py-4 rounded-xl font-black text-sm uppercase shadow-xl hover:bg-emerald-600 transition flex items-center justify-center group active:scale-95 transition-transform">
+                <Check size={20} className="mr-2 group-hover:scale-125 transition-transform" />
+                {t.confirm}
+              </button>
+            </div>
           </div>
-          <div className="flex-1 bg-gray-100 dark:bg-[#0a0a0c] flex overflow-auto relative select-none custom-scrollbar" ref={containerRef}>
+          <div className="flex-1 bg-gray-100 dark:bg-[#0d1117] flex overflow-auto relative select-none custom-scrollbar" ref={containerRef}>
             <div className="min-w-full min-h-full flex items-center justify-center p-20">
-                {isProcessing && <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/60 backdrop-blur-md"><div className="animate-spin rounded-full h-20 w-20 border-t-4 border-emerald-500 mb-6"></div><span className="text-emerald-400 font-bold uppercase tracking-widest text-sm animate-pulse">{t.processing}</span></div>}
-                <div className={`relative inline-block border shadow-2xl transition-transform ${isPanning ? 'cursor-grabbing' : isSpacePressed ? 'cursor-grab' : 'cursor-crosshair'}`} onMouseDown={handleMouseDown} style={{ transform: `scale(${zoom}) rotate(${rotation}deg)` }}>
-                  <img ref={imageRef} src={currentImage} onLoad={handleImageLoad} className="block max-w-full max-h-[75vh] object-contain" style={{ filter: `brightness(${brightness}%) contrast(${contrast}%)` }} draggable={false} />
+                {isProcessing && (
+                  <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/60 backdrop-blur-md">
+                    <div className="relative">
+                      <div className="animate-spin rounded-full h-24 w-24 border-t-4 border-emerald-500 border-r-transparent border-b-emerald-500/20 border-l-transparent"></div>
+                      <div className="absolute inset-0 flex items-center justify-center"><Sparkles className="text-emerald-400 animate-pulse" size={32} /></div>
+                    </div>
+                    <span className="text-emerald-400 font-bold uppercase tracking-widest text-sm mt-8 animate-pulse">{t.processing}</span>
+                  </div>
+                )}
+                <div className={`relative inline-block border border-gray-300 dark:border-gray-700 shadow-2xl transition-transform duration-75 ${isPanning ? 'cursor-grabbing' : isSpacePressed ? 'cursor-grab' : 'cursor-crosshair'}`} onMouseDown={handleMouseDown} style={{ transform: `scale(${zoom}) rotate(${rotation}deg)` }}>
+                  <img ref={imageRef} src={currentImage} onLoad={handleImageLoad} className="block max-w-full max-h-[75vh] object-contain bg-white" style={{ filter: `brightness(${brightness}%) contrast(${contrast}%)` }} draggable={false} />
                   {points && activeTool === 'crop' && (
                     <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
-                      <polygon points={points.map(p => `${p.x / (imageRef.current!.naturalWidth / imageRef.current!.getBoundingClientRect().width)},${p.y / (imageRef.current!.naturalWidth / imageRef.current!.getBoundingClientRect().width)}`).join(' ')} fill="rgba(0,255,255,0.1)" stroke="#00ffff" strokeWidth="2" strokeDasharray="4" />
-                      {points.map((p, i) => <circle key={i} cx={p.x / (imageRef.current!.naturalWidth / imageRef.current!.getBoundingClientRect().width)} cy={p.y / (imageRef.current!.naturalWidth / imageRef.current!.getBoundingClientRect().width)} r="12" fill="#00ffff" className="pointer-events-auto cursor-pointer" />)}
+                      <polygon points={points.map(p => `${p.x / (imageRef.current!.naturalWidth / imageRef.current!.getBoundingClientRect().width)},${p.y / (imageRef.current!.naturalWidth / imageRef.current!.getBoundingClientRect().width)}`).join(' ')} fill="rgba(16, 185, 129, 0.1)" stroke="#10b981" strokeWidth="2.5" strokeDasharray="6" />
+                      {points.map((p, i) => (
+                        <circle key={i} cx={p.x / (imageRef.current!.naturalWidth / imageRef.current!.getBoundingClientRect().width)} cy={p.y / (imageRef.current!.naturalWidth / imageRef.current!.getBoundingClientRect().width)} r="12" fill="#10b981" stroke="white" strokeWidth="2" className="pointer-events-auto cursor-pointer shadow-lg hover:r-[16px] transition-all" />
+                      ))}
                     </svg>
                   )}
                 </div>
