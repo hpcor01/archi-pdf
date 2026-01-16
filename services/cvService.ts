@@ -58,79 +58,36 @@ export const detectDocumentCorners = async (imageUrl: string): Promise<Point[] |
         const edged = new cv.Mat();
 
         cv.cvtColor(resized, gray, cv.COLOR_RGBA2GRAY);
-        // Usando bilateralFilter para preservar bordas enquanto remove ruído
         cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
-        cv.Canny(blurred, edged, 75, 200);
-        
+
+        // --- PIPELINE 1: CANNY EDGE DETECTION ---
+        cv.Canny(blurred, edged, 50, 150); // Sensibilidade aumentada
         const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
         cv.dilate(edged, edged, kernel);
 
-        const contours = new cv.MatVector();
-        const hierarchy = new cv.Mat();
-        cv.findContours(edged, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+        let bestPoints: Point[] | null = findContourPoints(edged, scale, resized.rows * resized.cols);
 
-        let bestPoints: Point[] | null = null;
-        let maxArea = 0;
-
-        // Limiar de área reduzido para 5% para capturar documentos menores na cena
-        const minAreaThreshold = (resized.rows * resized.cols * 0.05);
-
-        for (let i = 0; i < contours.size(); ++i) {
-          const cnt = contours.get(i);
-          const area = cv.contourArea(cnt);
-          if (area < minAreaThreshold) continue;
-
-          const perimeter = cv.arcLength(cnt, true);
-          const approx = new cv.Mat();
-          cv.approxPolyDP(cnt, approx, 0.02 * perimeter, true);
-
-          if (approx.rows === 4 && area > maxArea) {
-            maxArea = area;
-            bestPoints = [];
-            for (let j = 0; j < 4; j++) {
-              bestPoints.push({
-                x: Math.round(approx.data32S[j * 2] / scale),
-                y: Math.round(approx.data32S[j * 2 + 1] / scale)
-              });
-            }
-          }
-          approx.delete();
+        // --- PIPELINE 2: ADAPTIVE THRESHOLD (FALLBACK) ---
+        if (!bestPoints) {
+            const thresh = new cv.Mat();
+            cv.adaptiveThreshold(blurred, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
+            cv.bitwise_not(thresh, thresh); // Invert
+            cv.dilate(thresh, thresh, kernel);
+            bestPoints = findContourPoints(thresh, scale, resized.rows * resized.cols);
+            thresh.delete();
         }
 
-        // Fallback: se não achar quadrilátero perfeito, pega o bounding box do maior contorno
-        if (!bestPoints && contours.size() > 0) {
-            let largestIdx = -1;
-            let currentMaxArea = 0;
-            for (let i = 0; i < contours.size(); i++) {
-                const area = cv.contourArea(contours.get(i));
-                if (area > currentMaxArea) {
-                    currentMaxArea = area;
-                    largestIdx = i;
-                }
-            }
-            if (largestIdx !== -1 && currentMaxArea > minAreaThreshold) {
-                const rect = cv.minAreaRect(contours.get(largestIdx));
-                const vertices = cv.RotatedRect.points(rect);
-                bestPoints = [];
-                for (let j = 0; j < 4; j++) {
-                    bestPoints.push({
-                        x: Math.round(vertices[j].x / scale),
-                        y: Math.round(vertices[j].y / scale)
-                    });
-                }
-            }
-        }
-
-        if (bestPoints) {
-          // Ordenação TL, TR, BR, BL
-          bestPoints.sort((a, b) => a.y - b.y);
-          const top = bestPoints.slice(0, 2).sort((a, b) => a.x - b.x);
-          const bottom = bestPoints.slice(2, 4).sort((a, b) => b.x - a.x);
-          bestPoints = [top[0], top[1], bottom[0], bottom[1]];
+        // --- PIPELINE 3: JUST GRAB THE BIGGEST THING (EXTREME FALLBACK) ---
+        if (!bestPoints) {
+            const extremeThresh = new cv.Mat();
+            cv.threshold(blurred, extremeThresh, 127, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+            bestPoints = findContourPoints(extremeThresh, scale, resized.rows * resized.cols);
+            extremeThresh.delete();
         }
 
         src.delete(); resized.delete(); gray.delete(); blurred.delete(); 
-        edged.delete(); contours.delete(); hierarchy.delete(); kernel.delete();
+        edged.delete(); kernel.delete();
+        
         resolve(bestPoints);
       } catch (err) {
         console.error("OpenCV error:", err);
@@ -141,6 +98,68 @@ export const detectDocumentCorners = async (imageUrl: string): Promise<Point[] |
     img.src = imageUrl;
   });
 };
+
+/**
+ * Helper to find the best 4-point contour in a processed mat
+ */
+function findContourPoints(mat: any, scale: number, totalArea: number): Point[] | null {
+    const cv = window.cv;
+    const contours = new cv.MatVector();
+    const hierarchy = new cv.Mat();
+    cv.findContours(mat, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+    let bestPoints: Point[] | null = null;
+    let maxArea = 0;
+    const minAreaThreshold = totalArea * 0.01; // Reduzido drasticamente para 1%
+
+    for (let i = 0; i < contours.size(); ++i) {
+        const cnt = contours.get(i);
+        const area = cv.contourArea(cnt);
+        if (area < minAreaThreshold) continue;
+
+        const perimeter = cv.arcLength(cnt, true);
+        const approx = new cv.Mat();
+        cv.approxPolyDP(cnt, approx, 0.02 * perimeter, true);
+
+        // Se for um quadrilátero (4 pontos)
+        if (approx.rows === 4 && area > maxArea) {
+            maxArea = area;
+            bestPoints = [];
+            for (let j = 0; j < 4; j++) {
+                bestPoints.push({
+                    x: Math.round(approx.data32S[j * 2] / scale),
+                    y: Math.round(approx.data32S[j * 2 + 1] / scale)
+                });
+            }
+        } 
+        // Se não for quadrilátero mas for a maior área, pegamos o bounding box inclinado
+        else if (area > maxArea) {
+            const rect = cv.minAreaRect(cnt);
+            const vertices = cv.RotatedRect.points(rect);
+            bestPoints = [];
+            for (let j = 0; j < 4; j++) {
+                bestPoints.push({
+                    x: Math.round(vertices[j].x / scale),
+                    y: Math.round(vertices[j].y / scale)
+                });
+            }
+            maxArea = area;
+        }
+        approx.delete();
+    }
+
+    if (bestPoints) {
+        // Ordenação robusta: Top-Left, Top-Right, Bottom-Right, Bottom-Left
+        // 1. Sort by Y
+        bestPoints.sort((a, b) => a.y - b.y);
+        const top = bestPoints.slice(0, 2).sort((a, b) => a.x - b.x);
+        const bottom = bestPoints.slice(2, 4).sort((a, b) => b.x - a.x);
+        bestPoints = [top[0], top[1], bottom[0], bottom[1]];
+    }
+
+    contours.delete(); hierarchy.delete();
+    return bestPoints;
+}
 
 /**
  * Applies perspective transform (Warp) to an image given 4 corners.
@@ -155,6 +174,8 @@ export const applyPerspectiveCrop = async (imageUrl: string, points: Point[]): P
     img.onload = () => {
       try {
         const src = cv.imread(img);
+        
+        // Calculate dimensions of the output image based on points
         const wTop = Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
         const wBottom = Math.hypot(points[2].x - points[3].x, points[2].y - points[3].y);
         const hLeft = Math.hypot(points[3].x - points[0].x, points[3].y - points[0].y);
