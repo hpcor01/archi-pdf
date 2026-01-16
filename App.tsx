@@ -44,21 +44,40 @@ const App = () => {
 
   const t = TRANSLATIONS[language];
 
+  // --- Fixed Version Check Logic ---
   useEffect(() => {
     const checkVersion = async () => {
       try {
+        // Cache busting with timestamp
         const response = await fetch(`./version.json?t=${new Date().getTime()}`);
         if (!response.ok) return;
         const data = await response.json();
         const remoteVersion = data.version;
+        
+        // __APP_VERSION__ is defined in vite.config.ts
         if (typeof __APP_VERSION__ !== 'undefined' && remoteVersion !== __APP_VERSION__) {
           setIsUpdateAvailable(true);
+          console.log("Nova versão detectada:", remoteVersion);
         }
       } catch (error) {
         console.debug("Version check failed", error);
       }
     };
+
+    // Check on mount
     checkVersion();
+
+    // Check every 60 seconds
+    const interval = setInterval(checkVersion, 60000);
+
+    // Check when user returns to the tab
+    const handleFocus = () => checkVersion();
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   const handleUpdateApp = () => window.location.reload();
@@ -221,6 +240,7 @@ const App = () => {
         try {
           const newUrl = await autoCropImage(task.url);
           if (newUrl !== task.url) successCount++;
+          // Fixed task.id to task.docId
           setDocuments(prev => prev.map(doc => doc.id === task.docId ? { ...doc, items: doc.items.map(i => i.id === task.itemId ? { ...i, url: newUrl, processing: false } : i) } : doc));
         } catch (e) {
           setDocuments(prev => prev.map(doc => doc.id === task.docId ? { ...doc, items: doc.items.map(i => i.id === task.itemId ? { ...i, processing: false } : i) } : doc));
@@ -253,15 +273,17 @@ const App = () => {
 
   const getChangelog = () => {
     return language === 'pt-BR' ? [
-      "v2.3 - NOVO: Recorte Manual com Perspectiva (Correção de homografia)",
-      "v2.3 - Melhoria na IA de Detecção Automática (OpenCV)",
-      "v2.3 - Botão Desfazer para recortes em lote",
+      "v2.3 - NOVO: Sistema de Detecção de Atualizações Automáticas",
+      "v2.3 - Estabilidade aprimorada em recortes de perspectiva",
+      "v2.2 - Recorte Manual com Perspectiva (Correção de homografia)",
+      "v2.2 - IA OpenCV 4.x para Recorte Automático Inteligente",
       "OCR Inteligente integrado",
       "Suporte a arquivos PDF nativos"
     ] : [
-      "v2.2 - NEW: Manual Perspective Crop (Homography)",
-      "v2.2 - Improved AI Auto-Detection (OpenCV)",
-      "v2.2 - Batch Undo feature",
+      "v2.3 - NEW: Automatic Update Detection System",
+      "v2.3 - Improved stability in perspective crops",
+      "v2.2 - Manual Perspective Crop (Homography)",
+      "v2.2 - OpenCV 4.x AI for Intelligent Auto-Crop",
       "Integrated Smart OCR",
       "Native PDF support"
     ];
@@ -317,7 +339,7 @@ const App = () => {
              <div className="flex justify-between items-center mb-3">
                  <div className="flex items-center space-x-2 text-emerald-600 dark:text-emerald-400">
                     <Sparkles size={18} />
-                    <h3 className="font-bold text-base">Versão 2.2</h3>
+                    <h3 className="font-bold text-base">Versão 2.3</h3>
                  </div>
                  <button onClick={() => setShowVersionInfo(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><X size={16}/></button>
              </div>
