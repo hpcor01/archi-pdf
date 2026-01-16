@@ -18,16 +18,12 @@ interface Point {
 
 /**
  * Ensures OpenCV is loaded before executing a task.
- * Increased timeout to 30s to handle slow connections on production/Vercel.
  */
 const waitForCV = async (retries = 300): Promise<void> => {
-  // Check both window.cv existence and the ready flag from Module.onRuntimeInitialized
   if (window.cv && window.cv.imread && window.cv.Mat && (window.cvReady !== false)) return;
-  
   if (retries <= 0) {
-    throw new Error("OpenCV.js não pôde ser carregado. Verifique sua conexão ou se o script no index.html está acessível.");
+    throw new Error("OpenCV.js não pôde ser carregado.");
   }
-  
   await new Promise(resolve => setTimeout(resolve, 100));
   return waitForCV(retries - 1);
 };
@@ -51,8 +47,6 @@ export const detectDocumentCorners = async (imageUrl: string): Promise<Point[] |
     img.onload = () => {
       try {
         const src = cv.imread(img);
-        
-        // 1. Resize for consistent processing
         const maxDim = 800;
         const scale = Math.min(maxDim / src.rows, maxDim / src.cols);
         const dstSize = new cv.Size(Math.round(src.cols * scale), Math.round(src.rows * scale));
@@ -63,14 +57,14 @@ export const detectDocumentCorners = async (imageUrl: string): Promise<Point[] |
         const blurred = new cv.Mat();
         const edged = new cv.Mat();
 
-        // 2. Preprocessing: Gray -> Blur -> Canny -> Dilate
         cv.cvtColor(resized, gray, cv.COLOR_RGBA2GRAY);
+        // Usando bilateralFilter para preservar bordas enquanto remove ruído
         cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
-        cv.Canny(blurred, edged, 50, 150);
+        cv.Canny(blurred, edged, 75, 200);
+        
         const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
         cv.dilate(edged, edged, kernel);
 
-        // 3. Find Contours
         const contours = new cv.MatVector();
         const hierarchy = new cv.Mat();
         cv.findContours(edged, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
@@ -78,11 +72,13 @@ export const detectDocumentCorners = async (imageUrl: string): Promise<Point[] |
         let bestPoints: Point[] | null = null;
         let maxArea = 0;
 
-        // 4. Analyze Contours
+        // Limiar de área reduzido para 5% para capturar documentos menores na cena
+        const minAreaThreshold = (resized.rows * resized.cols * 0.05);
+
         for (let i = 0; i < contours.size(); ++i) {
           const cnt = contours.get(i);
           const area = cv.contourArea(cnt);
-          if (area < (resized.rows * resized.cols * 0.15)) continue; 
+          if (area < minAreaThreshold) continue;
 
           const perimeter = cv.arcLength(cnt, true);
           const approx = new cv.Mat();
@@ -97,40 +93,47 @@ export const detectDocumentCorners = async (imageUrl: string): Promise<Point[] |
                 y: Math.round(approx.data32S[j * 2 + 1] / scale)
               });
             }
-          } 
-          else if (area > maxArea && !bestPoints) {
-             const rect = cv.minAreaRect(cnt);
-             const vertices = cv.RotatedRect.points(rect);
-             const fallbackPoints: Point[] = [];
-             for (let j = 0; j < 4; j++) {
-                fallbackPoints.push({
-                   x: Math.round(vertices[j].x / scale),
-                   y: Math.round(vertices[j].y / scale)
-                });
-             }
-             bestPoints = fallbackPoints;
           }
           approx.delete();
         }
 
+        // Fallback: se não achar quadrilátero perfeito, pega o bounding box do maior contorno
+        if (!bestPoints && contours.size() > 0) {
+            let largestIdx = -1;
+            let currentMaxArea = 0;
+            for (let i = 0; i < contours.size(); i++) {
+                const area = cv.contourArea(contours.get(i));
+                if (area > currentMaxArea) {
+                    currentMaxArea = area;
+                    largestIdx = i;
+                }
+            }
+            if (largestIdx !== -1 && currentMaxArea > minAreaThreshold) {
+                const rect = cv.minAreaRect(contours.get(largestIdx));
+                const vertices = cv.RotatedRect.points(rect);
+                bestPoints = [];
+                for (let j = 0; j < 4; j++) {
+                    bestPoints.push({
+                        x: Math.round(vertices[j].x / scale),
+                        y: Math.round(vertices[j].y / scale)
+                    });
+                }
+            }
+        }
+
         if (bestPoints) {
-          const sums = bestPoints.map(p => p.x + p.y);
-          const diffs = bestPoints.map(p => p.y - p.x);
-          
-          const sorted = new Array(4);
-          sorted[0] = bestPoints[sums.indexOf(Math.min(...sums))]; // TL
-          sorted[2] = bestPoints[sums.indexOf(Math.max(...sums))]; // BR
-          sorted[1] = bestPoints[diffs.indexOf(Math.min(...diffs))]; // TR
-          sorted[3] = bestPoints[diffs.indexOf(Math.max(...diffs))]; // BL
-          bestPoints = sorted;
+          // Ordenação TL, TR, BR, BL
+          bestPoints.sort((a, b) => a.y - b.y);
+          const top = bestPoints.slice(0, 2).sort((a, b) => a.x - b.x);
+          const bottom = bestPoints.slice(2, 4).sort((a, b) => b.x - a.x);
+          bestPoints = [top[0], top[1], bottom[0], bottom[1]];
         }
 
         src.delete(); resized.delete(); gray.delete(); blurred.delete(); 
         edged.delete(); contours.delete(); hierarchy.delete(); kernel.delete();
-        
         resolve(bestPoints);
       } catch (err) {
-        console.error("OpenCV processing error:", err);
+        console.error("OpenCV error:", err);
         resolve(null);
       }
     };
@@ -152,7 +155,6 @@ export const applyPerspectiveCrop = async (imageUrl: string, points: Point[]): P
     img.onload = () => {
       try {
         const src = cv.imread(img);
-        
         const wTop = Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
         const wBottom = Math.hypot(points[2].x - points[3].x, points[2].y - points[3].y);
         const hLeft = Math.hypot(points[3].x - points[0].x, points[3].y - points[0].y);
@@ -183,18 +185,13 @@ export const applyPerspectiveCrop = async (imageUrl: string, points: Point[]): P
 
         src.delete(); dst.delete(); M.delete(); srcCoords.delete(); dstCoords.delete();
         resolve(dataUrl);
-      } catch (err) {
-        reject(err);
-      }
+      } catch (err) { reject(err); }
     };
     img.onerror = reject;
     img.src = imageUrl;
   });
 };
 
-/**
- * Convenience function for batch processing.
- */
 export const autoCropImage = async (imageUrl: string): Promise<string> => {
     const corners = await detectDocumentCorners(imageUrl);
     if (!corners) return imageUrl;
@@ -202,10 +199,7 @@ export const autoCropImage = async (imageUrl: string): Promise<string> => {
 };
 
 export const applyImageAdjustments = async (
-    imageUrl: string, 
-    brightness: number, 
-    contrast: number,
-    rotation: number = 0
+    imageUrl: string, brightness: number, contrast: number, rotation: number = 0
 ): Promise<string> => {
     return new Promise((resolve, reject) => {
         const img = new Image();
@@ -214,23 +208,18 @@ export const applyImageAdjustments = async (
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             if (!ctx) return;
-
             const rads = (rotation % 360) * Math.PI / 180;
             const sin = Math.abs(Math.sin(rads));
             const cos = Math.abs(Math.cos(rads));
             const newWidth = img.width * cos + img.height * sin;
             const newHeight = img.width * sin + img.height * cos;
-
-            canvas.width = newWidth;
-            canvas.height = newHeight;
+            canvas.width = newWidth; canvas.height = newHeight;
             ctx.filter = `brightness(${brightness}%) contrast(${contrast}%)`;
             ctx.translate(newWidth / 2, newHeight / 2);
             ctx.rotate(rads);
             ctx.drawImage(img, -img.width / 2, -img.height / 2);
-            
             resolve(canvas.toDataURL());
         };
-        img.onerror = reject;
-        img.src = imageUrl;
+        img.onerror = reject; img.src = imageUrl;
     });
 };
