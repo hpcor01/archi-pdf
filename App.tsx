@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Plus, X, Sparkles, Info, Users, ShieldCheck } from 'lucide-react';
+import { Plus, X, Sparkles, Info, Users, ShieldCheck, Github, ExternalLink } from 'lucide-react';
 import TopBar from './components/TopBar';
 import DocumentColumn from './components/DocumentColumn';
 import EditorModal from './components/EditorModal';
@@ -44,36 +44,25 @@ const App = () => {
 
   const t = TRANSLATIONS[language];
 
-  // --- Fixed Version Check Logic ---
   useEffect(() => {
     const checkVersion = async () => {
       try {
-        // Cache busting with timestamp
         const response = await fetch(`./version.json?t=${new Date().getTime()}`);
         if (!response.ok) return;
         const data = await response.json();
         const remoteVersion = data.version;
         
-        // __APP_VERSION__ is defined in vite.config.ts
         if (typeof __APP_VERSION__ !== 'undefined' && remoteVersion !== __APP_VERSION__) {
           setIsUpdateAvailable(true);
-          console.log("Nova versão detectada:", remoteVersion);
         }
       } catch (error) {
         console.debug("Version check failed", error);
       }
     };
-
-    // Check on mount
     checkVersion();
-
-    // Check every 60 seconds
     const interval = setInterval(checkVersion, 60000);
-
-    // Check when user returns to the tab
     const handleFocus = () => checkVersion();
     window.addEventListener('focus', handleFocus);
-
     return () => {
       clearInterval(interval);
       window.removeEventListener('focus', handleFocus);
@@ -240,7 +229,6 @@ const App = () => {
         try {
           const newUrl = await autoCropImage(task.url);
           if (newUrl !== task.url) successCount++;
-          // Fixed task.id to task.docId
           setDocuments(prev => prev.map(doc => doc.id === task.docId ? { ...doc, items: doc.items.map(i => i.id === task.itemId ? { ...i, url: newUrl, processing: false } : i) } : doc));
         } catch (e) {
           setDocuments(prev => prev.map(doc => doc.id === task.docId ? { ...doc, items: doc.items.map(i => i.id === task.itemId ? { ...i, processing: false } : i) } : doc));
@@ -325,21 +313,29 @@ const App = () => {
           </div>
           <footer className="mt-4 text-center text-xs text-gray-500 dark:text-gray-400 space-y-1 pb-1 relative z-40">
              <p>Αρχή - {t.footerQuote}</p>
-             <p>
-               Αρχή PDF© {new Date().getFullYear()} - {t.rightsReserved}. |{' '}
-               <a target="_blank" rel="noopener noreferrer" href="https://app.pipefy.com/public/form/d_5r27Kf" className="hover:text-emerald-500 transition">{t.supportLink}</a> |{' '}
-               <button onClick={() => setShowVersionInfo(!showVersionInfo)} className="hover:text-emerald-500 transition font-medium underline decoration-dotted underline-offset-2">
-                 Versão 2.3
+             <div className="flex items-center justify-center space-x-2">
+               <span>Αρχή PDF© {new Date().getFullYear()} - {t.rightsReserved}.</span>
+               <span>|</span>
+               <a target="_blank" rel="noopener noreferrer" href="https://app.pipefy.com/public/form/d_5r27Kf" className="hover:text-emerald-500 transition">{t.supportLink}</a>
+               <span>|</span>
+               <button onClick={() => { setShowAboutInfo(true); setShowVersionInfo(false); }} className="hover:text-emerald-500 transition font-medium underline decoration-dotted underline-offset-2">
+                 {t.about}
                </button>
-             </p>
+               <span>|</span>
+               <button onClick={() => { setShowVersionInfo(true); setShowAboutInfo(false); }} className="hover:text-emerald-500 transition font-medium underline decoration-dotted underline-offset-2">
+                 v2.3
+               </button>
+             </div>
           </footer>
         </main>
+
+        {/* Modal Versão */}
         {showVersionInfo && (
           <div className="fixed bottom-16 left-1/2 transform -translate-x-1/2 bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-2xl border border-emerald-500/30 z-[60] w-80 text-left transition-all duration-300 animate-slide-up">
              <div className="flex justify-between items-center mb-3">
                  <div className="flex items-center space-x-2 text-emerald-600 dark:text-emerald-400">
                     <Sparkles size={18} />
-                    <h3 className="font-bold text-base">Versão 2.3</h3>
+                    <h3 className="font-bold text-base">{t.version} 2.3</h3>
                  </div>
                  <button onClick={() => setShowVersionInfo(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><X size={16}/></button>
              </div>
@@ -352,6 +348,56 @@ const App = () => {
              </div>
           </div>
         )}
+
+        {/* Modal Sobre */}
+        {showAboutInfo && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[2px]">
+             <div className="bg-white dark:bg-gray-800 w-full max-w-md p-8 rounded-3xl shadow-2xl border border-gray-200 dark:border-gray-700 animate-fade-in relative">
+                <button onClick={() => setShowAboutInfo(false)} className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition">
+                  <X size={20} />
+                </button>
+                
+                <div className="flex flex-col items-center text-center">
+                  <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/30 rounded-2xl flex items-center justify-center text-emerald-600 dark:text-emerald-400 mb-4">
+                    <Users size={32} />
+                  </div>
+                  <h3 className="text-2xl font-black text-gray-900 dark:text-white mb-2">{t.aboutTitle}</h3>
+                  <p className="text-gray-600 dark:text-gray-400 text-sm mb-6 leading-relaxed">
+                    {t.developedBy}
+                  </p>
+
+                  <div className="w-full space-y-4 text-left">
+                    <div className="flex items-center space-x-3 text-gray-700 dark:text-gray-300">
+                      <ShieldCheck size={18} className="text-emerald-500" />
+                      <span className="text-sm font-bold uppercase tracking-wider">{t.openSourceLicenses}</span>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 gap-2">
+                      {[
+                        { name: 'PDF-lib', url: 'https://pdf-lib.js.org/' },
+                        { name: 'OpenCV.js', url: 'https://docs.opencv.org/4.x/opencv.js' },
+                        { name: 'Tesseract.js', url: 'https://tesseract.projectnaptha.com/' },
+                        { name: 'PDF.js', url: 'https://mozilla.github.io/pdf.js/' },
+                        { name: 'Lucide Icons', url: 'https://lucide.dev/' }
+                      ].map(lib => (
+                        <a key={lib.name} href={lib.url} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition group">
+                          <span className="text-sm font-medium">{lib.name}</span>
+                          <ExternalLink size={14} className="text-gray-400 group-hover:text-emerald-500 transition" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-8 flex items-center space-x-4">
+                     <button onClick={() => setShowAboutInfo(false)} className="px-6 py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-xl font-bold hover:bg-gray-200 dark:hover:bg-gray-600 transition">
+                       Fechar
+                     </button>
+                  </div>
+                </div>
+             </div>
+          </div>
+        )}
+
         <Toast message={toast.message} type={toast.type} isVisible={toast.visible} onClose={() => setToast({ ...toast, visible: false })} language={language} />
         <UpdateNotification isVisible={isUpdateAvailable} onUpdate={handleUpdateApp} language={language} />
         {editingItem && editingItem.item.type === 'image' && <EditorModal item={editingItem.item} isOpen={!!editingItem} onClose={() => setEditingItem(null)} onUpdate={handleUpdateItem} language={language} />}
