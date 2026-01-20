@@ -87,7 +87,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     ocrProcessing: "Reconhecendo texto (OCR)...",
     about: "Sobre",
     aboutTitle: "Sobre Αρχή PDF",
-    developedBy: "Criado e desenvolvido por",
+    developedBy: "Criado e desenvolvido por L. Stivan e H. Cordeiro",
     openSourceLicenses: "Licenças Open Source",
     version: "Versão"
   },
@@ -164,7 +164,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     ocrProcessing: "Recognizing text (OCR)...",
     about: "About",
     aboutTitle: "About Αρχή PDF",
-    developedBy: "Created and developed by",
+    developedBy: "Created and developed by L. Stivan and H. Cordeiro",
     openSourceLicenses: "Open Source Licenses",
     version: "Version"
   },
@@ -228,7 +228,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     adjustHelp: "Ajuste el contraste para ayudar a eliminar el fondo.",
     applyAdjustments: "Aplicar ajustes",
     updateAvailable: "Nueva versión disponible",
-    updateNow: "Actualizar",
+    updateNow: "Atualizar",
     addPages: "Añadir páginas",
     splitPdf: "Dividir PDF",
     splitIntervals: "Rangos de página",
@@ -241,7 +241,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     ocrProcessing: "Reconocimiento de texto (OCR)...",
     about: "Acerca de",
     aboutTitle: "Acerca de Αρχή PDF",
-    developedBy: "Creado y desarrollado por",
+    developedBy: "Creado y desarrollado por L. Stivan y H. Cordeiro",
     openSourceLicenses: "Licencias de código abierto",
     version: "Versión"
   },
@@ -321,7 +321,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     ocrProcessing: "Αναγνώριση κειμένου (OCR)...",
     about: "Σχετικά",
     aboutTitle: "Σχετικά με το Αρχή PDF",
-    developedBy: "Δημιουργήθηκε από τους",
+    developedBy: "Δημιουργήθηκε από τους L. Stivan και H. Cordeiro",
     openSourceLicenses: "Άδειες ανοιχτού κώδικα",
     version: "Έκδοση"
   },
@@ -398,7 +398,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     ocrProcessing: "מזהה טקסט (OCR)...",
     about: "אודות",
     aboutTitle: "אודות Αρχή PDF",
-    developedBy: "נוצר ופותח על ידי",
+    developedBy: "נוצר ופותח על ידי L. Stivan ו-H. Cordeiro",
     openSourceLicenses: "רישיונות קוד פתוח",
     version: "גרסה"
   }
