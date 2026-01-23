@@ -1,6 +1,5 @@
-
 import React, { useState } from 'react';
-import { Globe, Moon, Sun, ChevronDown, Trash, Maximize, AlertTriangle, Undo2 } from 'lucide-react';
+import { Globe, Moon, Sun, ChevronDown, Trash, Maximize, AlertTriangle, Undo2, Zap, X as CloseIcon } from 'lucide-react';
 import { AppSettings, Language, Theme } from '../types';
 import { TRANSLATIONS } from '../constants';
 
@@ -15,6 +14,7 @@ interface TopBarProps {
   isSaving: boolean;
   isProcessing: boolean;
   isPdfSelected: boolean;
+  hasAnyPdf: boolean; 
   allSelected: boolean;
   hasSelection: boolean;
   onToggleSelectAll: (selected: boolean) => void;
@@ -22,6 +22,8 @@ interface TopBarProps {
   setLanguage: (lang: Language) => void;
   theme: Theme;
   toggleTheme: () => void;
+  showCompressionHighlight?: boolean;
+  onCloseHighlight?: () => void;
 }
 
 const LANGUAGES: { code: Language; label: string }[] = [
@@ -43,13 +45,16 @@ const TopBar: React.FC<TopBarProps> = ({
   isSaving,
   isProcessing,
   isPdfSelected,
+  hasAnyPdf,
   allSelected,
   hasSelection,
   onToggleSelectAll,
   language,
   setLanguage,
   theme,
-  toggleTheme
+  toggleTheme,
+  showCompressionHighlight,
+  onCloseHighlight
 }) => {
   const t = TRANSLATIONS[language];
   const [isLangOpen, setIsLangOpen] = useState(false);
@@ -154,6 +159,59 @@ const TopBar: React.FC<TopBarProps> = ({
         </button>
 
         <div className="h-6 w-px bg-gray-300 dark:bg-gray-700 mx-2"></div>
+
+        {/* Compression Switch Toggle - Conditionally Enabled */}
+        <div className="relative">
+          <div className={`flex items-center space-x-3 transition-opacity duration-300 ${hasAnyPdf ? 'opacity-100' : 'opacity-30 pointer-events-none grayscale'}`}>
+            <div className="flex flex-col items-end">
+               <span className="text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase leading-none mb-1 tracking-widest">Compress</span>
+               <button 
+                  type="button"
+                  disabled={!hasAnyPdf}
+                  onClick={() => updateSetting('compressPdf', !settings.compressPdf)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none shadow-inner ${settings.compressPdf ? 'bg-orange-500' : 'bg-gray-300 dark:bg-gray-700'}`}
+                  aria-pressed={settings.compressPdf}
+               >
+                  <span 
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition-transform duration-200 ease-in-out ${settings.compressPdf ? 'translate-x-6' : 'translate-x-1'}`}
+                  />
+               </button>
+            </div>
+            {settings.compressPdf && (
+              <span title={t.compressPdf}>
+                <Zap size={18} className="text-orange-500" />
+              </span>
+            )}
+          </div>
+
+          {/* Destaque de Novo Recurso (Tooltip contextual) */}
+          {showCompressionHighlight && (
+            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-3 z-[60] animate-fade-in pointer-events-auto">
+               <div className="relative bg-orange-500 text-white p-3 rounded-2xl shadow-2xl min-w-[180px] border border-orange-400">
+                  {/* Arrow */}
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-b-[8px] border-b-orange-500" />
+                  
+                  <div className="flex items-start justify-between space-x-2">
+                     <div className="flex items-center space-x-2">
+                        <Zap size={16} className="text-white fill-white" />
+                        <span className="text-xs font-black uppercase tracking-tight whitespace-nowrap">
+                          {language === 'pt-BR' ? "Novo: Comprimir arquivos PDF" : "New: Compress PDF files"}
+                        </span>
+                     </div>
+                     <button 
+                        onClick={(e) => { e.stopPropagation(); onCloseHighlight?.(); }}
+                        className="p-1 hover:bg-white/20 rounded-full transition-colors"
+                      >
+                        <CloseIcon size={14} />
+                     </button>
+                  </div>
+                  
+                  {/* Pulse Effect Background */}
+                  <div className="absolute -inset-1 border-2 border-orange-500/50 rounded-2xl animate-ping pointer-events-none" />
+               </div>
+            </div>
+          )}
+        </div>
 
         {/* OCR Switch Toggle */}
         <div className="flex items-center space-x-3">
