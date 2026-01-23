@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { X, Check, RotateCcw, ZoomIn, ZoomOut, Search, Crop as CropIcon, Sliders, RotateCw, Maximize, Sparkles } from 'lucide-react';
 import { ImageItem, Language } from '../types';
@@ -83,7 +82,6 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
 
   const currentImage = history[currentIndex] || item.url;
 
-  // Helpers to get midpoint and center
   const getMidPoint = (p1: Point, p2: Point) => ({ x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 });
   const getCenterPoint = (pts: Point[]) => ({
     x: pts.reduce((acc, p) => acc + p.x, 0) / 4,
@@ -105,9 +103,9 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
       const natW = imageRef.current.naturalWidth;
       const scale = natW / rectW;
       const clientX = e.clientX; const clientY = e.clientY;
-      const handleRadius = 25 / zoom; 
+      const handleRadius = 35 / zoom; // Área de clique levemente maior para acessibilidade
 
-      // Check Corners (0-3)
+      // Check Corners
       for (let i = 0; i < 4; i++) {
         const px = points[i].x / scale + imgRect.left;
         const py = points[i].y / scale + imgRect.top;
@@ -119,7 +117,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
         }
       }
 
-      // Check Edges (4-7)
+      // Check Edges
       for (let i = 0; i < 4; i++) {
         const mid = getMidPoint(points[i], points[(i + 1) % 4]);
         const px = mid.x / scale + imgRect.left;
@@ -132,7 +130,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
         }
       }
 
-      // Check Center (8)
+      // Check Center
       const center = getCenterPoint(points);
       const px = center.x / scale + imgRect.left;
       const py = center.y / scale + imgRect.top;
@@ -157,8 +155,8 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
     const rectW = imageRef.current.getBoundingClientRect().width;
     const natW = imageRef.current.naturalWidth;
     const scale = natW / rectW;
-    const dx = (e.clientX - dragStartPosRef.current.x) * scale;
-    const dy = (e.clientY - dragStartPosRef.current.y) * scale;
+    const dx = (e.clientX - dragStartPosPosRef.current.x) * scale;
+    const dy = (e.clientY - dragStartPosPosRef.current.y) * scale;
     const newPoints = JSON.parse(JSON.stringify(initialPointsRef.current));
 
     if (dragInfo.type === 'corner') {
@@ -204,17 +202,16 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
     } finally { setIsProcessing(false); }
   };
 
-  // Magnifier Calculation
   const getMagnifierPos = () => {
     if (!isDragging || !points || !dragInfo || !imageRef.current) return null;
     let targetPoint;
     if (dragInfo.type === 'corner') targetPoint = points[dragInfo.index];
     else if (dragInfo.type === 'edge') targetPoint = getMidPoint(points[dragInfo.index], points[(dragInfo.index + 1) % 4]);
     else targetPoint = getCenterPoint(points);
-    
     return targetPoint;
   };
 
+  const dragStartPosPosRef = dragStartPosRef;
   const magnifierPoint = getMagnifierPos();
 
   return (
@@ -222,9 +219,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
       <div className="bg-white dark:bg-gray-900 w-[95vw] h-[95vh] rounded-2xl flex flex-col border border-gray-300 dark:border-gray-700 shadow-2xl overflow-hidden">
         <div className="h-16 flex items-center justify-between px-6 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 z-50">
           <div className="flex items-center space-x-3">
-            <div className="p-2 bg-emerald-500 rounded-lg text-white">
-              <Maximize size={20} />
-            </div>
+            <div className="p-2 bg-emerald-500 rounded-lg text-white"><Maximize size={20} /></div>
             <h2 className="text-lg font-bold text-gray-900 dark:text-white">{t.editorTitle}</h2>
           </div>
           <div className="flex items-center space-x-2">
@@ -291,21 +286,21 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                 )}
                 
                 {isDragging && magnifierPoint && (
-                  <div className="fixed top-20 right-20 w-48 h-48 border-4 border-emerald-500 rounded-full overflow-hidden shadow-2xl z-[80] bg-white dark:bg-gray-800 pointer-events-none">
+                  <div className="fixed top-20 right-20 w-56 h-56 border-4 border-emerald-500 rounded-full overflow-hidden shadow-2xl z-[80] bg-white dark:bg-gray-800 pointer-events-none">
                     <div 
                       className="absolute inset-0 origin-top-left" 
                       style={{
                         backgroundImage: `url(${currentImage})`,
-                        backgroundSize: `${imageRef.current!.naturalWidth * 2.5}px ${imageRef.current!.naturalHeight * 2.5}px`,
-                        backgroundPosition: `-${magnifierPoint.x * 2.5 - 96}px -${magnifierPoint.y * 2.5 - 96}px`,
+                        backgroundSize: `${imageRef.current!.naturalWidth * 3.5}px ${imageRef.current!.naturalHeight * 3.5}px`,
+                        backgroundPosition: `-${magnifierPoint.x * 3.5 - 112}px -${magnifierPoint.y * 3.5 - 112}px`,
                         backgroundRepeat: 'no-repeat',
                         filter: `brightness(${brightness}%) contrast(${contrast}%)`
                       }}
                     />
                     <div className="absolute inset-0 flex items-center justify-center">
-                       <div className="w-4 h-4 border-2 border-emerald-500 rounded-full shadow-lg" />
-                       <div className="absolute w-[1px] h-full bg-emerald-500/30" />
-                       <div className="absolute h-[1px] w-full bg-emerald-500/30" />
+                       <div className="w-6 h-6 border-2 border-emerald-500 rounded-full shadow-lg" />
+                       <div className="absolute w-[1px] h-full bg-emerald-500/50" />
+                       <div className="absolute h-[1px] w-full bg-emerald-500/50" />
                     </div>
                   </div>
                 )}
@@ -314,41 +309,56 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                   <img ref={imageRef} src={currentImage} onLoad={handleImageLoad} className="block max-w-full max-h-[75vh] object-contain bg-white" style={{ filter: `brightness(${brightness}%) contrast(${contrast}%)` }} draggable={false} />
                   {points && activeTool === 'crop' && (
                     <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
-                      <polygon points={points.map(p => `${p.x / (imageRef.current!.naturalWidth / imageRef.current!.getBoundingClientRect().width)},${p.y / (imageRef.current!.naturalWidth / imageRef.current!.getBoundingClientRect().width)}`).join(' ')} fill="rgba(16, 185, 129, 0.1)" stroke="#10b981" strokeWidth="2.5" strokeDasharray="6" />
+                      <polygon points={points.map(p => `${p.x / (imageRef.current!.naturalWidth / imageRef.current!.getBoundingClientRect().width)},${p.y / (imageRef.current!.naturalWidth / imageRef.current!.getBoundingClientRect().width)}`).join(' ')} fill="rgba(16, 185, 129, 0.15)" stroke="#10b981" strokeWidth="3" />
                       
-                      {/* 4 Corners */}
+                      {/* 4 Corners - CamScanner High Visibility - NO TRANSITION TO PREVENT SHAKING */}
                       {points.map((p, i) => (
-                        <circle key={`corner-${i}`} cx={p.x / (imageRef.current!.naturalWidth / imageRef.current!.getBoundingClientRect().width)} cy={p.y / (imageRef.current!.naturalWidth / imageRef.current!.getBoundingClientRect().width)} r="12" fill="#10b981" stroke="white" strokeWidth="2" className="pointer-events-auto cursor-pointer shadow-lg hover:r-[16px] transition-all" />
+                        <circle 
+                          key={`corner-${i}`} 
+                          cx={p.x / (imageRef.current!.naturalWidth / imageRef.current!.getBoundingClientRect().width)} 
+                          cy={p.y / (imageRef.current!.naturalWidth / imageRef.current!.getBoundingClientRect().width)} 
+                          r="14" 
+                          fill="#ffffff" 
+                          stroke="#10b981" 
+                          strokeWidth="4" 
+                          className="pointer-events-auto cursor-pointer shadow-xl" 
+                        />
                       ))}
 
-                      {/* 4 Edge Midpoints */}
+                      {/* 4 Edge Handles - Professional Pills */}
                       {[0, 1, 2, 3].map((i) => {
                         const mid = getMidPoint(points[i], points[(i + 1) % 4]);
                         const scaleFactor = imageRef.current!.naturalWidth / imageRef.current!.getBoundingClientRect().width;
+                        const p1 = points[i];
+                        const p2 = points[(i+1)%4];
+                        const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI;
                         return (
                           <rect 
                             key={`edge-${i}`} 
-                            x={mid.x / scaleFactor - 8} 
-                            y={mid.y / scaleFactor - 8} 
-                            width="16" height="16" 
-                            fill="white" stroke="#10b981" strokeWidth="2" 
-                            className="pointer-events-auto cursor-pointer shadow-md hover:scale-110 transition-transform" 
+                            x={mid.x / scaleFactor - 18} 
+                            y={mid.y / scaleFactor - 6} 
+                            width="36" height="12" rx="6"
+                            fill="#ffffff" stroke="#10b981" strokeWidth="2.5" 
+                            style={{ transform: `rotate(${angle}deg)`, transformOrigin: `${mid.x/scaleFactor}px ${mid.y/scaleFactor}px` }}
+                            className="pointer-events-auto cursor-pointer shadow-lg" 
                           />
                         );
                       })}
 
-                      {/* 1 Center Point */}
+                      {/* 1 Center Movement Point */}
                       {(() => {
                          const center = getCenterPoint(points);
                          const scaleFactor = imageRef.current!.naturalWidth / imageRef.current!.getBoundingClientRect().width;
                          return (
-                           <rect 
+                           <circle 
                              key="center-point"
-                             x={center.x / scaleFactor - 10} 
-                             y={center.y / scaleFactor - 10} 
-                             width="20" height="20" rx="4"
-                             fill="#10b981" stroke="white" strokeWidth="2" 
-                             className="pointer-events-auto cursor-move shadow-xl hover:scale-110 transition-transform" 
+                             cx={center.x / scaleFactor} 
+                             cy={center.y / scaleFactor} 
+                             r="12"
+                             fill="#10b981" 
+                             stroke="white" 
+                             strokeWidth="3" 
+                             className="pointer-events-auto cursor-move shadow-2xl" 
                            />
                          );
                       })()}
