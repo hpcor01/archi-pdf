@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, X, Sparkles, Info, Users, ShieldCheck, Github, ExternalLink } from 'lucide-react';
 import TopBar from './components/TopBar';
 import DocumentColumn from './components/DocumentColumn';
@@ -12,6 +12,8 @@ import { INITIAL_SETTINGS, TRANSLATIONS } from './constants';
 import { generatePDF } from './services/pdfService';
 import { autoCropImage } from './services/cvService';
 
+const APP_VERSION_LABEL = "2.4";
+
 const App = () => {
   const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
   const [documents, setDocuments] = useState<DocumentGroup[]>([
@@ -21,6 +23,7 @@ const App = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [language, setLanguage] = useState<Language>('pt-BR');
+  const [showCompressionHighlight, setShowCompressionHighlight] = useState(false);
   
   const [batchHistory, setBatchHistory] = useState<DocumentGroup[] | null>(null);
   
@@ -43,6 +46,10 @@ const App = () => {
   const [showAboutInfo, setShowAboutInfo] = useState(false);
 
   const t = TRANSLATIONS[language];
+
+  const hasAnyPdf = useMemo(() => {
+    return documents.some(doc => doc.items.some(item => item.type === 'pdf'));
+  }, [documents]);
 
   useEffect(() => {
     const checkVersion = async () => {
@@ -68,6 +75,19 @@ const App = () => {
       window.removeEventListener('focus', handleFocus);
     };
   }, []);
+
+  // Controle de destaque da nova versão v2.4
+  useEffect(() => {
+    const seenVersion = localStorage.getItem('seen-app-version');
+    if (seenVersion !== APP_VERSION_LABEL) {
+      setShowCompressionHighlight(true);
+    }
+  }, []);
+
+  const handleCloseHighlight = () => {
+    setShowCompressionHighlight(false);
+    localStorage.setItem('seen-app-version', APP_VERSION_LABEL);
+  };
 
   const handleUpdateApp = () => window.location.reload();
 
@@ -249,7 +269,7 @@ const App = () => {
     if (docsToSave.length === 0) return;
     setIsSaving(true);
     try {
-      await generatePDF(docsToSave, settings.useOCR);
+      await generatePDF(docsToSave, settings.useOCR, settings.compressPdf);
       setToast({ visible: true, message: t.docSaved, type: 'success' });
       setTimeout(() => handleClearAll(), 500);
     } catch (e) {
@@ -261,19 +281,17 @@ const App = () => {
 
   const getChangelog = () => {
     return language === 'pt-BR' ? [
-      "v2.3 - NOVO: Sistema de Detecção de Atualizações Automáticas",
-      "v2.3 - Estabilidade aprimorada em recortes de perspectiva",
-      "v2.2 - Recorte Manual com Perspectiva (Correção de homografia)",
-      "v2.2 - IA OpenCV 4.x para Recorte Automático Inteligente",
-      "OCR Inteligente integrado",
-      "Suporte a arquivos PDF nativos"
+      "v2.4 - NOVO: Recurso de Compressão de PDF de alta performance",
+      "v2.3 - Sistema de Detecção de Atualizações Automáticas",
+      "v2.2 - Recorte Manual Profissional e IA OpenCV 4.x",
+      "OCR Inteligente e suporte a PDF nativo integrados",
+      "Melhorias de estabilidade em dispositivos móveis"
     ] : [
-      "v2.3 - NEW: Automatic Update Detection System",
-      "v2.3 - Improved stability in perspective crops",
-      "v2.2 - Manual Perspective Crop (Homography)",
-      "v2.2 - OpenCV 4.x AI for Intelligent Auto-Crop",
-      "Integrated Smart OCR",
-      "Native PDF support"
+      "v2.4 - NEW: High-performance PDF Compression feature",
+      "v2.3 - Automatic Update Detection System",
+      "v2.2 - Professional Manual Crop and OpenCV 4.x AI",
+      "Integrated Smart OCR and native PDF support",
+      "Stability improvements for mobile devices"
     ];
   };
 
@@ -286,10 +304,13 @@ const App = () => {
           onUndoBatch={handleUndoBatch} canUndo={!!batchHistory}
           isSaving={isSaving} isProcessing={isProcessing}
           isPdfSelected={documents.some(d => d.selected && d.items.some(i => i.type === 'pdf'))}
+          hasAnyPdf={hasAnyPdf}
           allSelected={documents.length > 0 && documents.every(d => d.selected)}
           hasSelection={documents.some(d => d.selected)}
           onToggleSelectAll={handleToggleSelectAll} language={language}
           setLanguage={setLanguage} theme={theme} toggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
+          showCompressionHighlight={showCompressionHighlight}
+          onCloseHighlight={handleCloseHighlight}
         />
         <main className="flex-1 overflow-hidden p-4 sm:p-6 flex flex-col">
           <div className="flex-1 w-full border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-3xl relative flex flex-col overflow-hidden transition-colors dark:bg-[#232B3A]">
@@ -323,7 +344,7 @@ const App = () => {
                </button>
                <span>|</span>
                <button onClick={() => { setShowVersionInfo(true); setShowAboutInfo(false); }} className="hover:text-emerald-500 transition font-medium underline decoration-dotted underline-offset-2">
-                 v2.3
+                 v{APP_VERSION_LABEL}
                </button>
              </div>
           </footer>
@@ -335,7 +356,7 @@ const App = () => {
              <div className="flex justify-between items-center mb-3">
                  <div className="flex items-center space-x-2 text-emerald-600 dark:text-emerald-400">
                     <Sparkles size={18} />
-                    <h3 className="font-bold text-base">{t.version} 2.3</h3>
+                    <h3 className="font-bold text-base">{t.version} {APP_VERSION_LABEL}</h3>
                  </div>
                  <button onClick={() => setShowVersionInfo(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><X size={16}/></button>
              </div>
@@ -389,7 +410,7 @@ const App = () => {
                   </div>
 
                   <div className="mt-8 flex items-center space-x-4">
-                     <button onClick={() => setShowAboutInfo(false)} className="px-6 py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-xl font-bold hover:bg-gray-200 dark:hover:bg-gray-600 transition">
+                     <button onClick={() => { setShowAboutInfo(false); }} className="px-6 py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-xl font-bold hover:bg-gray-200 dark:hover:bg-gray-600 transition">
                        Fechar
                      </button>
                   </div>
