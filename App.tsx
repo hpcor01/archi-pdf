@@ -82,19 +82,17 @@ const App = () => {
   useEffect(() => {
     const seenVersion = localStorage.getItem('seen-app-version');
     if (seenVersion !== APP_VERSION_LABEL) {
-      // Se nunca viu a 2.4, mostra destaque de compressão
+      // Mostra destaque do manual para a 2.5
+      setShowManualHighlight(true);
+      // Se nunca viu a 2.4, mostra destaque de compressão também
       if (!seenVersion || parseFloat(seenVersion) < 2.4) {
         setShowCompressionHighlight(true);
       }
-      // Mostra destaque do manual para a 2.5
-      setShowManualHighlight(true);
     }
   }, []);
 
   const handleCloseCompressionHighlight = () => {
     setShowCompressionHighlight(false);
-    // Só atualiza a versão global se ambos forem fechados ou se for o mais recente
-    if (!showManualHighlight) localStorage.setItem('seen-app-version', APP_VERSION_LABEL);
   };
 
   const handleCloseManualHighlight = () => {
@@ -363,7 +361,7 @@ const App = () => {
                          <div className="flex items-center space-x-2">
                             <Sparkles size={16} className="text-white fill-white" />
                             <span className="text-xs font-black uppercase tracking-tight">
-                              {language === 'pt-BR' ? "Novo: Manual do Usuário" : "New: User Manual"}
+                              {language === 'pt-BR' ? "Novo: Manual v2.5" : "New: Manual v2.5"}
                             </span>
                          </div>
                          <button 
