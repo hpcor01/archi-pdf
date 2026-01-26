@@ -91,7 +91,19 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     aboutTitle: "Sobre Αρχή PDF",
     developedBy: "Criado e desenvolvido por L. Stivan e H. Cordeiro",
     openSourceLicenses: "Licenças Open Source",
-    version: "Versão"
+    version: "Versão",
+    manualTitle: "Manual do Usuário",
+    manualIntro: "Bem-vindo ao Αρχή PDF. Aqui estão as principais funcionalidades:",
+    manualOrganize: "Organização",
+    manualOrganizeText: "Crie novas colunas e arraste seus arquivos para organizá-los. Você pode mover itens entre colunas e renomeá-las conforme necessário.",
+    manualAutoCrop: "Recorte de IA",
+    manualAutoCropText: "Selecione as colunas desejadas e use o ícone de 'Recorte Automático' no topo. A IA identificará o documento e removerá fundos desnecessários.",
+    manualEditor: "Editor Profissional",
+    manualEditorText: "Clique no ícone de lupa ou 'Editar' em qualquer imagem para abrir o editor. Nele você pode ajustar os 4 cantos para corrigir a perspectiva (Efeito Scanner).",
+    manualPdfTools: "Ferramentas de PDF",
+    manualPdfToolsText: "Clique em arquivos PDF para reordenar páginas, excluir folhas específicas ou dividir um PDF em vários arquivos menores.",
+    manualSettings: "Configurações Avançadas",
+    manualSettingsText: "Ative 'Compress' para reduzir o peso do PDF final ou 'OCR AI' para tornar o texto das imagens pesquisável dentro do documento."
   },
   'en': {
     selectAll: "Select All",
@@ -169,7 +181,19 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     aboutTitle: "About Αρχή PDF",
     developedBy: "Created and developed by L. Stivan and H. Cordeiro",
     openSourceLicenses: "Open Source Licenses",
-    version: "Version"
+    version: "Version",
+    manualTitle: "User Manual",
+    manualIntro: "Welcome to Αρχή PDF. Here are the main features:",
+    manualOrganize: "Organization",
+    manualOrganizeText: "Create new columns and drag your files to organize them. You can move items between columns and rename them as needed.",
+    manualAutoCrop: "AI Crop",
+    manualAutoCropText: "Select the desired columns and use the 'Auto Crop' icon at the top. The AI will identify the document and remove unnecessary backgrounds.",
+    manualEditor: "Professional Editor",
+    manualEditorText: "Click on the search icon or 'Edit' on any image to open the editor. There you can adjust the 4 corners to correct the perspective (Scanner Effect).",
+    manualPdfTools: "PDF Tools",
+    manualPdfToolsText: "Click on PDF files to reorder pages, delete specific sheets, or split a PDF into several smaller files.",
+    manualSettings: "Advanced Settings",
+    manualSettingsText: "Enable 'Compress' to reduce final PDF size or 'OCR AI' to make image text searchable within the document."
   },
   'es': {
     selectAll: "Seleccionar todo",
@@ -247,7 +271,19 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     aboutTitle: "Acerca de Αρχή PDF",
     developedBy: "Creado y desarrollado por L. Stivan e H. Cordeiro",
     openSourceLicenses: "Licenças Open Source",
-    version: "Versión"
+    version: "Versión",
+    manualTitle: "Manual de Usuario",
+    manualIntro: "Bienvenido a Αρχή PDF. Estas son las características principales:",
+    manualOrganize: "Organización",
+    manualOrganizeText: "Cree nuevas columnas y arrastre sus archivos para organizarlos. Puede mover elementos entre columnas y renombrarlos según sea necesario.",
+    manualAutoCrop: "Recorte de IA",
+    manualAutoCropText: "Seleccione las columnas deseadas y use el icono de 'Recorte automático' en la parte superior. La IA identificará el documento y eliminará fondos innecesarios.",
+    manualEditor: "Editor Profesional",
+    manualEditorText: "Haga clic en el icono de lupa o 'Editar' en cualquier imagen para abrir el editor. Allí puede ajustar las 4 esquinas para corregir la perspectiva (Efecto Escáner).",
+    manualPdfTools: "Herramientas PDF",
+    manualPdfToolsText: "Haga clic en los archivos PDF para reordenar páginas, eliminar hojas específicas o dividir un PDF en varios archivos más pequeños.",
+    manualSettings: "Ajustes Avanzados",
+    manualSettingsText: "Habilite 'Compress' para reducir el tamaño del PDF final o 'OCR AI' para que el texto de la imagen sea buscable dentro del documento."
   },
   'el': {
     selectAll: "Επιλογή όλων",
@@ -328,7 +364,19 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     aboutTitle: "Σχετικά με το Αρχή PDF",
     developedBy: "Δημιουργήθηκε από τους L. Stivan και H. Cordeiro",
     openSourceLicenses: "Άδειες ανοιχτού κώδικα",
-    version: "Έκδοση"
+    version: "Έκδοση",
+    manualTitle: "Εγχειρίδιο Χρήστη",
+    manualIntro: "Καλώς ήρθατε στο Αρχή PDF. Εδώ είναι τα κύρια χαρακτηριστικά:",
+    manualOrganize: "Οργάνωση",
+    manualOrganizeText: "Δημιουργήστε νέες στήλες και σύρετε τα αρχεία σας για να τα οργανώσετε. Μπορείτε να μετακινήσετε στοιχεία μεταξύ στηλών και να τα μετονομάσετε όπως απαιτείται.",
+    manualAutoCrop: "AI Περικοπή",
+    manualAutoCropText: "Επιλέξτε τις επιθυμητές στήλες και χρησιμοποιήστε το εικονίδιο 'Αυτόματη Περικοπή' στο πάνω μέρος. Η AI θα αναγνωρίσει το έγγραφο και θα αφαιρέσει τα περιττά φόντα.",
+    manualEditor: "Επαγγελματικός Επεξεργαστής",
+    manualEditorText: "Κάντε κλικ στο εικονίδιο αναζήτησης ή στο 'Επεξεργασία' σε οποιαδήποτε εικόνα για να ανοίξετε τον επεξεργαστή. Εκεί μπορείτε να προσαρμόσετε τις 4 γωνίες για να διορθώσετε την προοπτική.",
+    manualPdfTools: "Εργαλεία PDF",
+    manualPdfToolsText: "Κάντε κλικ στα αρχεία PDF για να αναδιατάξετε σελίδες, να διαγράψετε συγκεκριμένα φύλλα ή να χωρίσετε ένα PDF σε πολλά μικρότερα αρχεία.",
+    manualSettings: "Προηγμένες Ρυθμίσεις",
+    manualSettingsText: "Ενεργοποιήστε το 'Compress' για να μειώσετε το τελικό μέγεθος PDF ή το 'OCR AI' για να κάνετε το κείμενο της εικόνας αναζητήσιμο μέσα στο έγγραφο."
   },
   'he': {
     selectAll: "בחר הכל",
@@ -406,6 +454,18 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     aboutTitle: "אודות Αρχή PDF",
     developedBy: "נוצר ופותח על ידי L. Stivan ו-H. Cordeiro",
     openSourceLicenses: "רישיונות קוד פתוח",
-    version: "גרסה"
+    version: "גרסה",
+    manualTitle: "מדריך למשתמש",
+    manualIntro: "ברוכים הבאים ל-Αρχή PDF. להלן התכונות העיקריות:",
+    manualOrganize: "ארגון",
+    manualOrganizeText: "צור עמודות חדשות וגרור את הקבצים שלך כדי לארגן אותם. אתה יכול להעביר פריטים בין עמודות ולשנות את שמם לפי הצורך.",
+    manualAutoCrop: "חיתוך בינה מלאכותית",
+    manualAutoCropText: "בחר את העמודות הרצויות והשתמש בסמל 'חיתוך אוטומטי' למעלה. הבינה המלאכותית תזהה את המסמך ותסיר רקעים מיותרים.",
+    manualEditor: "עורך מקצועי",
+    manualEditorText: "לחץ על סמל החיפוש או 'ערוך' בכל תמונה כדי לפתוח את העורך. שם תוכל להתאים את 4 הפינות כדי לתקן את הפרספקטיבה.",
+    manualPdfTools: "כלי PDF",
+    manualPdfToolsText: "לחץ על קבצי PDF כדי לשנות את סדר העמודים, למחוק גיליונות ספציפיים או לפצל PDF למספר קבצים קטנים יותר.",
+    manualSettings: "הגדרות מתקדמות",
+    manualSettingsText: "אפשר את 'Compress' כדי להקטין את גודל ה-PDF הסופי או 'OCR AI' כדי להפוך טקסט בתמונה לניתן לחיפוש בתוך המסמך."
   }
 };
