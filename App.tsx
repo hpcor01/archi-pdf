@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, X, Sparkles, Info, Users, ShieldCheck, Github, ExternalLink } from 'lucide-react';
+import { Plus, X, Sparkles, Info, Users, ShieldCheck, Github, ExternalLink, BookOpen, Layers, Maximize2, FileText, Settings, LayoutGrid } from 'lucide-react';
 import TopBar from './components/TopBar';
 import DocumentColumn from './components/DocumentColumn';
 import EditorModal from './components/EditorModal';
@@ -12,7 +12,7 @@ import { INITIAL_SETTINGS, TRANSLATIONS } from './constants';
 import { generatePDF } from './services/pdfService';
 import { autoCropImage } from './services/cvService';
 
-const APP_VERSION_LABEL = "2.4";
+const APP_VERSION_LABEL = "2.5";
 
 const App = () => {
   const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
@@ -24,6 +24,8 @@ const App = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [language, setLanguage] = useState<Language>('pt-BR');
   const [showCompressionHighlight, setShowCompressionHighlight] = useState(false);
+  const [showManualHighlight, setShowManualHighlight] = useState(false);
+  const [showManual, setShowManual] = useState(false);
   
   const [batchHistory, setBatchHistory] = useState<DocumentGroup[] | null>(null);
   
@@ -76,16 +78,27 @@ const App = () => {
     };
   }, []);
 
-  // Controle de destaque da nova versão v2.4
+  // Controle de destaque das novas versões
   useEffect(() => {
     const seenVersion = localStorage.getItem('seen-app-version');
     if (seenVersion !== APP_VERSION_LABEL) {
-      setShowCompressionHighlight(true);
+      // Se nunca viu a 2.4, mostra destaque de compressão
+      if (!seenVersion || parseFloat(seenVersion) < 2.4) {
+        setShowCompressionHighlight(true);
+      }
+      // Mostra destaque do manual para a 2.5
+      setShowManualHighlight(true);
     }
   }, []);
 
-  const handleCloseHighlight = () => {
+  const handleCloseCompressionHighlight = () => {
     setShowCompressionHighlight(false);
+    // Só atualiza a versão global se ambos forem fechados ou se for o mais recente
+    if (!showManualHighlight) localStorage.setItem('seen-app-version', APP_VERSION_LABEL);
+  };
+
+  const handleCloseManualHighlight = () => {
+    setShowManualHighlight(false);
     localStorage.setItem('seen-app-version', APP_VERSION_LABEL);
   };
 
@@ -281,17 +294,17 @@ const App = () => {
 
   const getChangelog = () => {
     return language === 'pt-BR' ? [
-      "v2.4 - NOVO: Recurso de Compressão de PDF de alta performance",
+      "v2.5 - NOVO: Manual do Usuário interativo e detalhado",
+      "v2.4 - Recurso de Compressão de PDF de alta performance",
       "v2.3 - Sistema de Detecção de Atualizações Automáticas",
       "v2.2 - Recorte Manual Profissional e IA OpenCV 4.x",
-      "OCR Inteligente e suporte a PDF nativo integrados",
-      "Melhorias de estabilidade em dispositivos móveis"
+      "OCR Inteligente e suporte a PDF nativo integrados"
     ] : [
-      "v2.4 - NEW: High-performance PDF Compression feature",
+      "v2.5 - NEW: Detailed and interactive User Manual",
+      "v2.4 - High-performance PDF Compression feature",
       "v2.3 - Automatic Update Detection System",
       "v2.2 - Professional Manual Crop and OpenCV 4.x AI",
-      "Integrated Smart OCR and native PDF support",
-      "Stability improvements for mobile devices"
+      "Integrated Smart OCR and native PDF support"
     ];
   };
 
@@ -310,7 +323,7 @@ const App = () => {
           onToggleSelectAll={handleToggleSelectAll} language={language}
           setLanguage={setLanguage} theme={theme} toggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
           showCompressionHighlight={showCompressionHighlight}
-          onCloseHighlight={handleCloseHighlight}
+          onCloseHighlight={handleCloseCompressionHighlight}
         />
         <main className="flex-1 overflow-hidden p-4 sm:p-6 flex flex-col">
           <div className="flex-1 w-full border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-3xl relative flex flex-col overflow-hidden transition-colors dark:bg-[#232B3A]">
@@ -328,9 +341,50 @@ const App = () => {
                 ))}
               </div>
             </div>
-            <button onClick={handleAddDocument} className="absolute bottom-6 right-6 w-14 h-14 bg-emerald-500 hover:bg-emerald-400 rounded-full shadow-2xl flex items-center justify-center text-white transition transform hover:scale-105 z-30">
-              <Plus size={32} />
-            </button>
+            
+            <div className="absolute bottom-6 right-6 flex flex-col space-y-4 items-center z-30">
+              <div className="relative">
+                <button 
+                  onClick={() => { setShowManual(true); if (showManualHighlight) handleCloseManualHighlight(); }} 
+                  className="w-14 h-14 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-full shadow-lg flex items-center justify-center transition transform hover:scale-110 hover:bg-emerald-200 dark:hover:bg-emerald-800/50"
+                  title={t.manualTitle}
+                >
+                  <BookOpen size={28} />
+                </button>
+
+                {/* Destaque para o Manual (v2.5) */}
+                {showManualHighlight && (
+                  <div className="absolute right-full top-1/2 -translate-y-1/2 mr-4 z-[60] animate-fade-in pointer-events-auto">
+                    <div className="relative bg-emerald-600 text-white p-3 rounded-2xl shadow-2xl min-w-[200px] border border-emerald-500">
+                      {/* Arrow */}
+                      <div className="absolute left-full top-1/2 -translate-y-1/2 w-0 h-0 border-t-[8px] border-t-transparent border-b-[8px] border-b-transparent border-l-[8px] border-l-emerald-600" />
+                      
+                      <div className="flex items-start justify-between space-x-2">
+                         <div className="flex items-center space-x-2">
+                            <Sparkles size={16} className="text-white fill-white" />
+                            <span className="text-xs font-black uppercase tracking-tight">
+                              {language === 'pt-BR' ? "Novo: Manual do Usuário" : "New: User Manual"}
+                            </span>
+                         </div>
+                         <button 
+                            onClick={(e) => { e.stopPropagation(); handleCloseManualHighlight(); }}
+                            className="p-1 hover:bg-white/20 rounded-full transition-colors"
+                          >
+                            <X size={14} />
+                         </button>
+                      </div>
+                      
+                      {/* Pulse Effect Background */}
+                      <div className="absolute -inset-1 border-2 border-emerald-500/50 rounded-2xl animate-ping pointer-events-none" />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <button onClick={handleAddDocument} className="w-14 h-14 bg-emerald-500 hover:bg-emerald-400 rounded-full shadow-2xl flex items-center justify-center text-white transition transform hover:scale-105">
+                <Plus size={32} />
+              </button>
+            </div>
           </div>
           <footer className="mt-4 text-center text-xs text-gray-500 dark:text-gray-400 space-y-1 pb-1 relative z-40">
              <p>Αρχή - {t.footerQuote}</p>
@@ -339,11 +393,11 @@ const App = () => {
                <span>|</span>
                <a target="_blank" rel="noopener noreferrer" href="https://app.pipefy.com/public/form/d_5r27Kf" className="hover:text-emerald-500 transition">{t.supportLink}</a>
                <span>|</span>
-               <button onClick={() => { setShowAboutInfo(true); setShowVersionInfo(false); }} className="hover:text-emerald-500 transition font-medium underline decoration-dotted underline-offset-2">
+               <button onClick={() => { setShowAboutInfo(true); setShowVersionInfo(false); setShowManual(false); }} className="hover:text-emerald-500 transition font-medium underline decoration-dotted underline-offset-2">
                  {t.about}
                </button>
                <span>|</span>
-               <button onClick={() => { setShowVersionInfo(true); setShowAboutInfo(false); }} className="hover:text-emerald-500 transition font-medium underline decoration-dotted underline-offset-2">
+               <button onClick={() => { setShowVersionInfo(true); setShowAboutInfo(false); setShowManual(false); }} className="hover:text-emerald-500 transition font-medium underline decoration-dotted underline-offset-2">
                  v{APP_VERSION_LABEL}
                </button>
              </div>
@@ -366,6 +420,85 @@ const App = () => {
              <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 rounded-lg flex items-start space-x-2">
                 <Info size={16} className="text-emerald-600 dark:text-emerald-400 mt-0.5 flex-shrink-0" />
                 <p className="text-xs text-emerald-800 dark:text-emerald-200 font-medium">{t.comingSoon}</p>
+             </div>
+          </div>
+        )}
+
+        {/* Modal Manual do Usuário */}
+        {showManual && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+             <div className="bg-white dark:bg-gray-900 w-full max-w-2xl p-8 rounded-3xl shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col max-h-[90vh]">
+                <div className="flex justify-between items-center mb-6">
+                   <div className="flex items-center space-x-3 text-emerald-600 dark:text-emerald-400">
+                      <BookOpen size={28} />
+                      <h3 className="text-2xl font-black">{t.manualTitle}</h3>
+                   </div>
+                   <button onClick={() => setShowManual(false)} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-white transition">
+                      <X size={24} />
+                   </button>
+                </div>
+
+                <p className="text-gray-600 dark:text-gray-400 mb-8 font-medium italic">
+                   {t.manualIntro}
+                </p>
+
+                <div className="flex-1 overflow-y-auto pr-4 space-y-8 custom-scrollbar">
+                   <section className="flex items-start space-x-4">
+                      <div className="p-3 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-2xl flex-shrink-0">
+                         <Layers size={24} />
+                      </div>
+                      <div>
+                         <h4 className="font-black text-gray-900 dark:text-white uppercase tracking-wider text-sm mb-1">{t.manualOrganize}</h4>
+                         <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">{t.manualOrganizeText}</p>
+                      </div>
+                   </section>
+
+                   <section className="flex items-start space-x-4">
+                      <div className="p-3 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded-2xl flex-shrink-0">
+                         <Maximize2 size={24} />
+                      </div>
+                      <div>
+                         <h4 className="font-black text-gray-900 dark:text-white uppercase tracking-wider text-sm mb-1">{t.manualAutoCrop}</h4>
+                         <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">{t.manualAutoCropText}</p>
+                      </div>
+                   </section>
+
+                   <section className="flex items-start space-x-4">
+                      <div className="p-3 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-2xl flex-shrink-0">
+                         <LayoutGrid size={24} />
+                      </div>
+                      <div>
+                         <h4 className="font-black text-gray-900 dark:text-white uppercase tracking-wider text-sm mb-1">{t.manualEditor}</h4>
+                         <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">{t.manualEditorText}</p>
+                      </div>
+                   </section>
+
+                   <section className="flex items-start space-x-4">
+                      <div className="p-3 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-2xl flex-shrink-0">
+                         <FileText size={24} />
+                      </div>
+                      <div>
+                         <h4 className="font-black text-gray-900 dark:text-white uppercase tracking-wider text-sm mb-1">{t.manualPdfTools}</h4>
+                         <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">{t.manualPdfToolsText}</p>
+                      </div>
+                   </section>
+
+                   <section className="flex items-start space-x-4">
+                      <div className="p-3 bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-2xl flex-shrink-0">
+                         <Settings size={24} />
+                      </div>
+                      <div>
+                         <h4 className="font-black text-gray-900 dark:text-white uppercase tracking-wider text-sm mb-1">{t.manualSettings}</h4>
+                         <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">{t.manualSettingsText}</p>
+                      </div>
+                   </section>
+                </div>
+
+                <div className="mt-8 pt-6 border-t border-gray-100 dark:border-gray-800">
+                   <button onClick={() => setShowManual(false)} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 rounded-2xl transition shadow-lg shadow-emerald-500/20">
+                      Entendi, vamos começar!
+                   </button>
+                </div>
              </div>
           </div>
         )}
