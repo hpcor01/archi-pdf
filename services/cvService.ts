@@ -29,6 +29,16 @@ const waitForCV = async (retries = 300): Promise<void> => {
 };
 
 /**
+ * Helper to sort 4 points into [TL, TR, BR, BL] order robustly
+ */
+const sortPoints = (pts: Point[]): Point[] => {
+  const sorted = [...pts].sort((a, b) => a.y - b.y);
+  const top = sorted.slice(0, 2).sort((a, b) => a.x - b.x);
+  const bottom = sorted.slice(2, 4).sort((a, b) => b.x - a.x);
+  return [top[0], top[1], bottom[0], bottom[1]];
+};
+
+/**
  * Detects document corners with an advanced computer vision pipeline.
  */
 export const detectDocumentCorners = async (imageUrl: string): Promise<Point[] | null> => {
@@ -61,7 +71,7 @@ export const detectDocumentCorners = async (imageUrl: string): Promise<Point[] |
         cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
 
         // --- PIPELINE 1: CANNY EDGE DETECTION ---
-        cv.Canny(blurred, edged, 50, 150); // Sensibilidade aumentada
+        cv.Canny(blurred, edged, 50, 150);
         const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
         cv.dilate(edged, edged, kernel);
 
@@ -71,18 +81,10 @@ export const detectDocumentCorners = async (imageUrl: string): Promise<Point[] |
         if (!bestPoints) {
             const thresh = new cv.Mat();
             cv.adaptiveThreshold(blurred, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
-            cv.bitwise_not(thresh, thresh); // Invert
+            cv.bitwise_not(thresh, thresh);
             cv.dilate(thresh, thresh, kernel);
             bestPoints = findContourPoints(thresh, scale, resized.rows * resized.cols);
             thresh.delete();
-        }
-
-        // --- PIPELINE 3: JUST GRAB THE BIGGEST THING (EXTREME FALLBACK) ---
-        if (!bestPoints) {
-            const extremeThresh = new cv.Mat();
-            cv.threshold(blurred, extremeThresh, 127, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
-            bestPoints = findContourPoints(extremeThresh, scale, resized.rows * resized.cols);
-            extremeThresh.delete();
         }
 
         src.delete(); resized.delete(); gray.delete(); blurred.delete(); 
@@ -99,9 +101,6 @@ export const detectDocumentCorners = async (imageUrl: string): Promise<Point[] |
   });
 };
 
-/**
- * Helper to find the best 4-point contour in a processed mat
- */
 function findContourPoints(mat: any, scale: number, totalArea: number): Point[] | null {
     const cv = window.cv;
     const contours = new cv.MatVector();
@@ -110,7 +109,7 @@ function findContourPoints(mat: any, scale: number, totalArea: number): Point[] 
 
     let bestPoints: Point[] | null = null;
     let maxArea = 0;
-    const minAreaThreshold = totalArea * 0.01; // Reduzido drasticamente para 1%
+    const minAreaThreshold = totalArea * 0.01;
 
     for (let i = 0; i < contours.size(); ++i) {
         const cnt = contours.get(i);
@@ -121,7 +120,6 @@ function findContourPoints(mat: any, scale: number, totalArea: number): Point[] 
         const approx = new cv.Mat();
         cv.approxPolyDP(cnt, approx, 0.02 * perimeter, true);
 
-        // Se for um quadrilátero (4 pontos)
         if (approx.rows === 4 && area > maxArea) {
             maxArea = area;
             bestPoints = [];
@@ -132,7 +130,6 @@ function findContourPoints(mat: any, scale: number, totalArea: number): Point[] 
                 });
             }
         } 
-        // Se não for quadrilátero mas for a maior área, pegamos o bounding box inclinado
         else if (area > maxArea) {
             const rect = cv.minAreaRect(cnt);
             const vertices = cv.RotatedRect.points(rect);
@@ -149,12 +146,7 @@ function findContourPoints(mat: any, scale: number, totalArea: number): Point[] 
     }
 
     if (bestPoints) {
-        // Ordenação robusta: Top-Left, Top-Right, Bottom-Right, Bottom-Left
-        // 1. Sort by Y
-        bestPoints.sort((a, b) => a.y - b.y);
-        const top = bestPoints.slice(0, 2).sort((a, b) => a.x - b.x);
-        const bottom = bestPoints.slice(2, 4).sort((a, b) => b.x - a.x);
-        bestPoints = [top[0], top[1], bottom[0], bottom[1]];
+        bestPoints = sortPoints(bestPoints);
     }
 
     contours.delete(); hierarchy.delete();
@@ -175,19 +167,23 @@ export const applyPerspectiveCrop = async (imageUrl: string, points: Point[]): P
       try {
         const src = cv.imread(img);
         
-        // Calculate dimensions of the output image based on points
-        const wTop = Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
-        const wBottom = Math.hypot(points[2].x - points[3].x, points[2].y - points[3].y);
-        const hLeft = Math.hypot(points[3].x - points[0].x, points[3].y - points[0].y);
-        const hRight = Math.hypot(points[2].x - points[1].x, points[2].y - points[1].y);
-        const targetW = Math.max(wTop, wBottom);
-        const targetH = Math.max(hLeft, hRight);
+        // Always sort points before processing to guarantee TL, TR, BR, BL
+        const sorted = sortPoints(points);
+
+        // Accurate output dimensions based on average distance to preserve aspect ratio
+        const widthA = Math.hypot(sorted[2].x - sorted[3].x, sorted[2].y - sorted[3].y);
+        const widthB = Math.hypot(sorted[1].x - sorted[0].x, sorted[1].y - sorted[0].y);
+        const targetW = Math.max(widthA, widthB);
+
+        const heightA = Math.hypot(sorted[1].x - sorted[2].x, sorted[1].y - sorted[2].y);
+        const heightB = Math.hypot(sorted[0].x - sorted[3].x, sorted[0].y - sorted[3].y);
+        const targetH = Math.max(heightA, heightB);
 
         const srcCoords = cv.matFromArray(4, 1, cv.CV_32FC2, [
-          points[0].x, points[0].y,
-          points[1].x, points[1].y,
-          points[2].x, points[2].y,
-          points[3].x, points[3].y
+          sorted[0].x, sorted[0].y,
+          sorted[1].x, sorted[1].y,
+          sorted[2].x, sorted[2].y,
+          sorted[3].x, sorted[3].y
         ]);
         const dstCoords = cv.matFromArray(4, 1, cv.CV_32FC2, [
           0, 0,
