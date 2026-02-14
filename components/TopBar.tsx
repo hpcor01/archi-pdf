@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Globe, Moon, Sun, ChevronDown, Trash, Maximize, AlertTriangle, Undo2, Zap, X as CloseIcon } from 'lucide-react';
 import { AppSettings, Language, Theme } from '../types';
@@ -213,12 +214,13 @@ const TopBar: React.FC<TopBarProps> = ({
           )}
         </div>
 
-        {/* OCR Switch Toggle */}
-        <div className="flex items-center space-x-3">
+        {/* OCR Switch Toggle - Conditionally Enabled */}
+        <div className={`flex items-center space-x-3 transition-opacity duration-300 ${hasAnyPdf ? 'opacity-100' : 'opacity-30 pointer-events-none grayscale'}`}>
           <div className="flex flex-col items-end">
              <span className="text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase leading-none mb-1 tracking-widest">OCR AI</span>
              <button 
                 type="button"
+                disabled={!hasAnyPdf}
                 onClick={handleOcrToggle}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none shadow-inner ${settings.useOCR ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}
                 aria-pressed={settings.useOCR}
