@@ -1,5 +1,6 @@
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Check, RotateCcw, ZoomIn, ZoomOut, Search, Crop as CropIcon, Sliders, RotateCw, Maximize, Sparkles } from 'lucide-react';
+import { X, Check, RotateCcw, ZoomIn, ZoomOut, Search, Crop as CropIcon, Sliders, RotateCw, Maximize, Sparkles, Wand2 } from 'lucide-react';
 import { ImageItem, Language } from '../types';
 import { detectDocumentCorners, applyPerspectiveCrop, applyImageAdjustments } from '../services/cvService';
 import { TRANSLATIONS } from '../constants';
@@ -30,7 +31,6 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
   const [dragInfo, setDragInfo] = useState<{ index: number; type: 'corner' | 'edge' | 'center' } | null>(null);
   const [brightness, setBrightness] = useState(100);
   const [contrast, setContrast] = useState(100);
-  const [rotation, setRotation] = useState(0); 
   const [zoom, setZoom] = useState(1);
   const [isPanning, setIsPanning] = useState(false);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
@@ -53,7 +53,6 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
       setIsPanning(false);
       setBrightness(100);
       setContrast(100);
-      setRotation(0);
     }
   }, [item, isOpen]);
 
@@ -103,9 +102,8 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
       const natW = imageRef.current.naturalWidth;
       const scale = natW / rectW;
       const clientX = e.clientX; const clientY = e.clientY;
-      const handleRadius = 35 / zoom; // Área de clique levemente maior para acessibilidade
+      const handleRadius = 35 / zoom;
 
-      // Check Corners
       for (let i = 0; i < 4; i++) {
         const px = points[i].x / scale + imgRect.left;
         const py = points[i].y / scale + imgRect.top;
@@ -117,7 +115,6 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
         }
       }
 
-      // Check Edges
       for (let i = 0; i < 4; i++) {
         const mid = getMidPoint(points[i], points[(i + 1) % 4]);
         const px = mid.x / scale + imgRect.left;
@@ -130,7 +127,6 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
         }
       }
 
-      // Check Center
       const center = getCenterPoint(points);
       const px = center.x / scale + imgRect.left;
       const py = center.y / scale + imgRect.top;
@@ -155,8 +151,8 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
     const rectW = imageRef.current.getBoundingClientRect().width;
     const natW = imageRef.current.naturalWidth;
     const scale = natW / rectW;
-    const dx = (e.clientX - dragStartPosPosRef.current.x) * scale;
-    const dy = (e.clientY - dragStartPosPosRef.current.y) * scale;
+    const dx = (e.clientX - dragStartPosRef.current.x) * scale;
+    const dy = (e.clientY - dragStartPosRef.current.y) * scale;
     const newPoints = JSON.parse(JSON.stringify(initialPointsRef.current));
 
     if (dragInfo.type === 'corner') {
@@ -186,14 +182,54 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
     return () => { window.removeEventListener('mousemove', handleWindowMouseMove); };
   }, [isDragging, isPanning, handleWindowMouseMove]);
 
+  const handleApplyRotation = async (angle: number) => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    try {
+      const rotatedUrl = await applyImageAdjustments(currentImage, 100, 100, angle);
+      const newHistory = history.slice(0, currentIndex + 1);
+      newHistory.push(rotatedUrl);
+      setHistory(newHistory);
+      setCurrentIndex(newHistory.length - 1);
+      
+      // Reiniciar a ferramenta de recorte após a rotação
+      setPoints(null);
+      await handlePerformAutoDetection(rotatedUrl);
+    } catch (err) {
+      console.error("Erro ao girar imagem", err);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleApplyCropOnly = async () => {
+    if (!points || isProcessing) return;
+    setIsProcessing(true);
+    try {
+      const croppedUrl = await applyPerspectiveCrop(currentImage, points);
+      const newHistory = history.slice(0, currentIndex + 1);
+      newHistory.push(croppedUrl);
+      setHistory(newHistory);
+      setCurrentIndex(newHistory.length - 1);
+      
+      // Reiniciar ferramentas para o novo estado da imagem
+      setPoints(null);
+      await handlePerformAutoDetection(croppedUrl);
+    } catch (err) {
+      alert("Erro ao aplicar recorte.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleSave = async () => {
     setIsProcessing(true);
     let finalUrl = currentImage;
     try {
       if (activeTool === 'crop' && points) {
           finalUrl = await applyPerspectiveCrop(finalUrl, points);
-      } else if (brightness !== 100 || contrast !== 100 || rotation !== 0) {
-          finalUrl = await applyImageAdjustments(finalUrl, brightness, contrast, rotation);
+      } else if (brightness !== 100 || contrast !== 100) {
+          finalUrl = await applyImageAdjustments(finalUrl, brightness, contrast, 0);
       }
       onUpdate({ ...item, url: finalUrl });
       onClose();
@@ -211,7 +247,6 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
     return targetPoint;
   };
 
-  const dragStartPosPosRef = dragStartPosRef;
   const magnifierPoint = getMagnifierPos();
 
   return (
@@ -240,7 +275,17 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                      <span className={`font-bold text-sm ${activeTool === 'crop' ? 'text-emerald-900 dark:text-emerald-100' : 'text-gray-600 dark:text-gray-400'}`}>Recorte Manual</span>
                    </button>
                    {activeTool === 'crop' && (
-                      <div className="mt-4 animate-fade-in"><p className="text-[11px] text-emerald-800/70 dark:text-emerald-200/50 italic leading-relaxed">Arraste os cantos detectados para ajustar a perspectiva.</p></div>
+                      <div className="mt-4 animate-fade-in space-y-3">
+                        <p className="text-[11px] text-emerald-800/70 dark:text-emerald-200/50 italic leading-relaxed">Arraste os cantos detectados para ajustar a perspectiva.</p>
+                        <button 
+                          onClick={handleApplyCropOnly}
+                          disabled={!points || isProcessing}
+                          className="w-full flex items-center justify-center space-x-2 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors shadow-sm disabled:opacity-50"
+                        >
+                          <Wand2 size={14} />
+                          <span>Aplicar Recorte</span>
+                        </button>
+                      </div>
                    )}
               </div>
               <div className={`border-2 rounded-xl p-4 transition-all ${activeTool === 'adjust' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'bg-white dark:bg-gray-800 border-transparent'}`}>
@@ -259,8 +304,8 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                           <input type="range" min="0" max="200" value={contrast} onChange={(e) => setContrast(parseInt(e.target.value))} className="w-full accent-emerald-500 h-1.5 bg-emerald-200 dark:bg-emerald-900 rounded-lg appearance-none cursor-pointer" />
                         </div>
                         <div className="flex space-x-2 pt-2 border-t border-emerald-100 dark:border-emerald-800">
-                          <button onClick={() => setRotation(r => r - 90)} className="flex-1 py-2 bg-white dark:bg-gray-700 border border-emerald-200 dark:border-emerald-800 rounded-lg hover:bg-emerald-100 transition shadow-sm text-emerald-600"><RotateCcw size={16} className="mx-auto" /></button>
-                          <button onClick={() => setRotation(r => r + 90)} className="flex-1 py-2 bg-white dark:bg-gray-700 border border-emerald-200 dark:border-emerald-800 rounded-lg hover:bg-emerald-100 transition shadow-sm text-emerald-600"><RotateCw size={16} className="mx-auto" /></button>
+                          <button onClick={() => handleApplyRotation(-90)} className="flex-1 py-2 bg-white dark:bg-gray-700 border border-emerald-200 dark:border-emerald-800 rounded-lg hover:bg-emerald-100 transition shadow-sm text-emerald-600"><RotateCcw size={16} className="mx-auto" /></button>
+                          <button onClick={() => handleApplyRotation(90)} className="flex-1 py-2 bg-white dark:bg-gray-700 border border-emerald-200 dark:border-emerald-800 rounded-lg hover:bg-emerald-100 transition shadow-sm text-emerald-600"><RotateCw size={16} className="mx-auto" /></button>
                         </div>
                       </div>
                    )}
@@ -305,13 +350,12 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                   </div>
                 )}
 
-                <div className={`relative inline-block border border-gray-300 dark:border-gray-700 shadow-2xl transition-transform duration-75 ${isPanning ? 'cursor-grabbing' : isSpacePressed ? 'cursor-grab' : 'cursor-crosshair'}`} onMouseDown={handleMouseDown} style={{ transform: `scale(${zoom}) rotate(${rotation}deg)` }}>
+                <div className={`relative inline-block border border-gray-300 dark:border-gray-700 shadow-2xl transition-transform duration-75 ${isPanning ? 'cursor-grabbing' : isSpacePressed ? 'cursor-grab' : 'cursor-crosshair'}`} onMouseDown={handleMouseDown} style={{ transform: `scale(${zoom})` }}>
                   <img ref={imageRef} src={currentImage} onLoad={handleImageLoad} className="block max-w-full max-h-[75vh] object-contain bg-white" style={{ filter: `brightness(${brightness}%) contrast(${contrast}%)` }} draggable={false} />
                   {points && activeTool === 'crop' && (
                     <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
                       <polygon points={points.map(p => `${p.x / (imageRef.current!.naturalWidth / imageRef.current!.getBoundingClientRect().width)},${p.y / (imageRef.current!.naturalWidth / imageRef.current!.getBoundingClientRect().width)}`).join(' ')} fill="rgba(16, 185, 129, 0.15)" stroke="#10b981" strokeWidth="3" />
                       
-                      {/* 4 Corners - CamScanner High Visibility - NO TRANSITION TO PREVENT SHAKING */}
                       {points.map((p, i) => (
                         <circle 
                           key={`corner-${i}`} 
@@ -325,7 +369,6 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                         />
                       ))}
 
-                      {/* 4 Edge Handles - Professional Pills */}
                       {[0, 1, 2, 3].map((i) => {
                         const mid = getMidPoint(points[i], points[(i + 1) % 4]);
                         const scaleFactor = imageRef.current!.naturalWidth / imageRef.current!.getBoundingClientRect().width;
@@ -345,7 +388,6 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                         );
                       })}
 
-                      {/* 1 Center Movement Point */}
                       {(() => {
                          const center = getCenterPoint(points);
                          const scaleFactor = imageRef.current!.naturalWidth / imageRef.current!.getBoundingClientRect().width;
