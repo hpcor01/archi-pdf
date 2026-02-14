@@ -12,7 +12,7 @@ import { INITIAL_SETTINGS, TRANSLATIONS } from './constants';
 import { generatePDF } from './services/pdfService';
 import { autoCropImage } from './services/cvService';
 
-const APP_VERSION_LABEL = "2.5";
+const APP_VERSION_LABEL = "2.6";
 
 const App = () => {
   const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
@@ -82,7 +82,7 @@ const App = () => {
   useEffect(() => {
     const seenVersion = localStorage.getItem('seen-app-version');
     if (seenVersion !== APP_VERSION_LABEL) {
-      // Mostra destaque do manual para a 2.5
+      // Mostra destaque do manual para a 2.6
       setShowManualHighlight(true);
       // Se nunca viu a 2.4, mostra destaque de compressão também
       if (!seenVersion || parseFloat(seenVersion) < 2.4) {
@@ -292,16 +292,16 @@ const App = () => {
 
   const getChangelog = () => {
     return language === 'pt-BR' ? [
-      "v2.5 - NOVO: Manual do Usuário interativo e detalhado",
+      "v2.6 - NOVO: Ferramentas avançadas de Edição de PDF, Recorte de Perspectiva e correção de bugs",
+      "v2.5 - Manual do Usuário interativo e detalhado",
       "v2.4 - Recurso de Compressão de PDF de alta performance",
       "v2.3 - Sistema de Detecção de Atualizações Automáticas",
-      "v2.2 - Recorte Manual Profissional e IA OpenCV 4.x",
       "OCR Inteligente e suporte a PDF nativo integrados"
     ] : [
-      "v2.5 - NEW: Detailed and interactive User Manual",
+      "v2.6 - NEW: Advanced PDF Editing, Perspective Crop tools and bug fixes",
+      "v2.5 - Detailed and interactive User Manual",
       "v2.4 - High-performance PDF Compression feature",
       "v2.3 - Automatic Update Detection System",
-      "v2.2 - Professional Manual Crop and OpenCV 4.x AI",
       "Integrated Smart OCR and native PDF support"
     ];
   };
@@ -350,7 +350,7 @@ const App = () => {
                   <BookOpen size={28} />
                 </button>
 
-                {/* Destaque para o Manual (v2.5) */}
+                {/* Destaque para o Manual (v2.6) */}
                 {showManualHighlight && (
                   <div className="absolute right-full top-1/2 -translate-y-1/2 mr-4 z-[60] animate-fade-in pointer-events-auto">
                     <div className="relative bg-emerald-600 text-white p-3 rounded-2xl shadow-2xl min-w-[200px] border border-emerald-500">
@@ -361,7 +361,7 @@ const App = () => {
                          <div className="flex items-center space-x-2">
                             <Sparkles size={16} className="text-white fill-white" />
                             <span className="text-xs font-black uppercase tracking-tight">
-                              {language === 'pt-BR' ? "Novo: Manual v2.5" : "New: Manual v2.5"}
+                              {language === 'pt-BR' ? "Novo: Manual v2.6" : "New: Manual v2.6"}
                             </span>
                          </div>
                          <button 
