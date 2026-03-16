@@ -12,12 +12,12 @@ import { INITIAL_SETTINGS, TRANSLATIONS } from './constants';
 import { generatePDF } from './services/pdfService';
 import { autoCropImage } from './services/cvService';
 
-const APP_VERSION_LABEL = "2.6";
+const APP_VERSION_LABEL = "2.7";
 
 const App = () => {
   const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
   const [documents, setDocuments] = useState<DocumentGroup[]>([
-    { id: '1', title: 'PDF 1', items: [], selected: false }
+    { id: '1', title: 'PDF 1', items: [], selected: true }
   ]);
   const [editingItem, setEditingItem] = useState<{ docId: string, item: ImageItem } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -82,7 +82,7 @@ const App = () => {
   useEffect(() => {
     const seenVersion = localStorage.getItem('seen-app-version');
     if (seenVersion !== APP_VERSION_LABEL) {
-      // Mostra destaque do manual para a 2.6
+      // Mostra destaque do manual para a 2.7
       setShowManualHighlight(true);
       // Se nunca viu a 2.4, mostra destaque de compressão também
       if (!seenVersion || parseFloat(seenVersion) < 2.4) {
@@ -98,6 +98,10 @@ const App = () => {
   const handleCloseManualHighlight = () => {
     setShowManualHighlight(false);
     localStorage.setItem('seen-app-version', APP_VERSION_LABEL);
+  };
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ visible: true, message, type });
   };
 
   const handleUpdateApp = () => window.location.reload();
@@ -188,7 +192,7 @@ const App = () => {
         })
       };
     }));
-    setToast({ visible: true, message: language === 'pt-BR' ? "Imagem restaurada." : "Image restored.", type: 'success' });
+    setToast({ visible: true, message: language === 'pt-BR' ? "Arquivo restaurado." : "File restored.", type: 'success' });
   };
 
   const handleRestoreItem = (docId: string, itemId: string) => {
@@ -292,17 +296,17 @@ const App = () => {
 
   const getChangelog = () => {
     return language === 'pt-BR' ? [
-      "v2.6 - NOVO: Ferramentas avançadas de Edição de PDF, Recorte de Perspectiva e correção de bugs",
+      "v2.7 - NOVO: Rotação de PDF, Recorte de PDF, melhorias visuais e correção de bugs menores",
+      "v2.6 - Ferramentas avançadas de Edição de PDF, Recorte de Perspectiva e correção de bugs",
       "v2.5 - Manual do Usuário interativo e detalhado",
       "v2.4 - Recurso de Compressão de PDF de alta performance",
-      "v2.3 - Sistema de Detecção de Atualizações Automáticas",
-      "OCR Inteligente e suporte a PDF nativo integrados"
+      "v2.3 - Sistema de Detecção de Atualizações Automáticas"
     ] : [
-      "v2.6 - NEW: Advanced PDF Editing, Perspective Crop tools and bug fixes",
+      "v2.7 - NEW: PDF Rotation, PDF Cropping, visual improvements and minor bug fixes",
+      "v2.6 - Advanced PDF Editing, Perspective Crop tools and bug fixes",
       "v2.5 - Detailed and interactive User Manual",
       "v2.4 - High-performance PDF Compression feature",
-      "v2.3 - Automatic Update Detection System",
-      "Integrated Smart OCR and native PDF support"
+      "v2.3 - Automatic Update Detection System"
     ];
   };
 
@@ -322,6 +326,7 @@ const App = () => {
           setLanguage={setLanguage} theme={theme} toggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
           showCompressionHighlight={showCompressionHighlight}
           onCloseHighlight={handleCloseCompressionHighlight}
+          onShowToast={showToast}
         />
         <main className="flex-1 overflow-hidden p-4 sm:p-6 flex flex-col">
           <div className="flex-1 w-full border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-3xl relative flex flex-col overflow-hidden transition-colors dark:bg-[#232B3A]">
@@ -350,7 +355,7 @@ const App = () => {
                   <BookOpen size={28} />
                 </button>
 
-                {/* Destaque para o Manual (v2.6) */}
+                {/* Destaque para o Manual (v2.7) */}
                 {showManualHighlight && (
                   <div className="absolute right-full top-1/2 -translate-y-1/2 mr-4 z-[60] animate-fade-in pointer-events-auto">
                     <div className="relative bg-emerald-600 text-white p-3 rounded-2xl shadow-2xl min-w-[200px] border border-emerald-500">
@@ -361,7 +366,7 @@ const App = () => {
                          <div className="flex items-center space-x-2">
                             <Sparkles size={16} className="text-white fill-white" />
                             <span className="text-xs font-black uppercase tracking-tight">
-                              {language === 'pt-BR' ? "Novo: Manual v2.6" : "New: Manual v2.6"}
+                              {language === 'pt-BR' ? "Novo: Manual v2.7" : "New: Manual v2.7"}
                             </span>
                          </div>
                          <button 
