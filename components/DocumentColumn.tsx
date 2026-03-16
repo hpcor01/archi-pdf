@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { Trash2, FileText, Plus, Search, RotateCw, Undo2, RotateCcw } from 'lucide-react';
+import { Trash2, FileText, Plus, Search, RotateCw, Undo2, RotateCcw, Pencil } from 'lucide-react';
 import { DocumentGroup, ImageItem, AppSettings, Language } from '../types';
 import { TRANSLATIONS } from '../constants';
 
@@ -115,7 +115,14 @@ const DocumentColumn: React.FC<DocumentColumnProps> = ({
         <div className="flex items-center space-x-3">
           <input type="checkbox" checked={document.selected} onChange={(e) => onToggleSelection(document.id, e.target.checked)} className="custom-checkbox" />
           <div className="flex flex-col">
-            <input value={document.title} onChange={(e) => onRenameDoc(document.id, e.target.value)} className="bg-transparent text-sm font-bold text-gray-800 dark:text-gray-200 focus:outline-none focus:border-b border-emerald-500 w-32 placeholder-gray-500" />
+            <div className="flex items-center group/title">
+              <input 
+                value={document.title} 
+                onChange={(e) => onRenameDoc(document.id, e.target.value)} 
+                className="bg-transparent text-sm font-bold text-gray-800 dark:text-gray-200 focus:outline-none focus:border-b border-emerald-500 w-32 placeholder-gray-500" 
+              />
+              <Pencil size={12} className="ml-1 text-gray-400 opacity-0 group-hover/title:opacity-100 transition-opacity pointer-events-none" />
+            </div>
             <span className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{t.total}: {document.items.length}</span>
           </div>
         </div>
@@ -131,20 +138,20 @@ const DocumentColumn: React.FC<DocumentColumnProps> = ({
         
         {document.items.map((item, index) => (
           <div key={item.id} draggable onDragStart={(e) => handleItemDragStart(e, item)} onDragOver={(e) => handleItemDragOver(e, index)} onDragLeave={handleItemDragLeave} onDrop={(e) => handleItemDrop(e, index)} className={`relative group/item bg-gray-50 dark:bg-gray-800 rounded-lg p-2.5 flex items-center space-x-3 border transition shadow-sm ${dragOverIndex === index ? 'border-t-2 border-t-emerald-500' : 'border-gray-200 dark:border-gray-700'} hover:border-gray-400 cursor-move`}>
-            <div className="w-12 h-12 bg-gray-200 dark:bg-gray-900 rounded-lg overflow-hidden flex items-center justify-center flex-shrink-0 relative border border-gray-200 dark:border-gray-700">
+            <div className="w-24 h-24 bg-gray-200 dark:bg-gray-900 rounded-lg overflow-hidden flex items-center justify-center flex-shrink-0 relative border border-gray-200 dark:border-gray-700">
                {item.type === 'image' ? (
                  <>
                    <img src={item.url} alt={item.name} className="w-full h-full object-cover" />
-                   {item.processing && <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-20"><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div></div>}
-                   <button className="absolute top-0 right-0 w-6 h-6 bg-white/90 dark:bg-gray-900/80 hover:bg-emerald-500 hover:text-white text-gray-600 dark:text-gray-300 flex items-center justify-center transition-colors z-10 rounded-bl-lg" onMouseEnter={() => setHoveredPreviewId(item.id)} onMouseLeave={() => setHoveredPreviewId(null)} onClick={(e) => { e.stopPropagation(); onEditItem(item); }}><Search size={12} /></button>
+                   {item.processing && <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-20"><div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin"></div></div>}
+                   <button className="absolute top-0 right-0 w-8 h-8 bg-white/90 dark:bg-gray-900/80 hover:bg-emerald-500 hover:text-white text-gray-600 dark:text-gray-300 flex items-center justify-center transition-colors z-10 rounded-bl-lg" onMouseEnter={() => setHoveredPreviewId(item.id)} onMouseLeave={() => setHoveredPreviewId(null)} onClick={(e) => { e.stopPropagation(); onEditItem(item); }}><Search size={16} /></button>
                  </>
-               ) : <FileText className="text-red-500" size={20} />}
+               ) : <FileText className="text-red-500" size={40} />}
             </div>
 
             {hoveredPreviewId === item.id && item.type === 'image' && (
-              <div className="fixed inset-0 z-[100] pointer-events-none flex items-center justify-center bg-black/20 backdrop-blur-[1px]">
-                 <div className="bg-white dark:bg-gray-900 p-2 rounded-xl border shadow-2xl max-w-[500px] max-h-[500px]">
-                    <img src={item.url} alt="Preview" className="max-w-full max-h-[480px] object-contain rounded-lg" />
+              <div className="fixed inset-0 z-[100] pointer-events-none flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                 <div className="bg-white dark:bg-gray-900 p-2 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-2xl max-w-[90vw] max-h-[90vh]">
+                    <img src={item.url} alt="Preview" className="max-w-full max-h-[85vh] object-contain rounded-xl" />
                  </div>
               </div>
             )}
@@ -157,8 +164,12 @@ const DocumentColumn: React.FC<DocumentColumnProps> = ({
                   <>
                     <button onClick={() => onRotateItem?.(document.id, item.id)} className="text-[10px] bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 px-2 py-0.5 rounded text-gray-600 dark:text-gray-300 transition" title={t.rotate}><RotateCw size={11} /></button>
                     {item.backupUrl && <button onClick={() => onRestoreItem?.(document.id, item.id)} className="text-[10px] bg-orange-100 dark:bg-orange-900/30 hover:bg-orange-200 px-2 py-0.5 rounded text-orange-600 dark:text-orange-300 transition" title={t.restore}><Undo2 size={11} /></button>}
-                    {item.url !== item.originalUrl && <button onClick={() => onResetToOriginal?.(document.id, item.id)} className="text-[10px] bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 px-2 py-0.5 rounded text-blue-600 dark:text-blue-300 transition flex items-center" title={t.reset}><RotateCcw size={11} className="mr-1" /> Cache</button>}
                   </>
+                )}
+                {item.url !== item.originalUrl && (
+                  <button onClick={() => onResetToOriginal?.(document.id, item.id)} className="text-[10px] bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 px-2 py-0.5 rounded text-blue-600 dark:text-blue-300 transition flex items-center" title={t.reset}>
+                    <RotateCcw size={11} className="mr-1" /> Cache
+                  </button>
                 )}
               </div>
             </div>
