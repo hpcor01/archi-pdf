@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { X, Save, Trash2, ArrowLeft, ArrowRight, ZoomIn, ZoomOut, Search, Grid, Plus, Scissors, Download } from 'lucide-react';
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { X, Save, Trash2, ArrowLeft, ArrowRight, ZoomIn, ZoomOut, Search, Grid, Plus, RotateCcw, RotateCw, Undo2, RefreshCcw, Check, Crop as CropIcon, Sparkles } from 'lucide-react';
 import { ImageItem, Language } from '../types';
 import { TRANSLATIONS } from '../constants';
+import { detectDocumentCorners, applyPerspectiveCrop, applyImageAdjustments } from '../services/cvService';
 
-// Declare globals for libraries loaded via CDN
 declare global {
   interface Window {
     pdfjsLib: any;
@@ -28,42 +29,53 @@ interface PdfPage {
   originalFile?: File; 
 }
 
+interface Point {
+  x: number;
+  y: number;
+}
+
 const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, onUpdate, language }) => {
   const t = TRANSLATIONS[language];
   const [pages, setPages] = useState<PdfPage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [draggedItem, setDraggedItem] = useState<number | null>(null);
-  const [gridZoom, setGridZoom] = useState(1);
-  const [isSplitPanelOpen, setIsSplitPanelOpen] = useState(false);
-  const [splitRanges, setSplitRanges] = useState('');
   const [viewingPageIndex, setViewingPageIndex] = useState<number | null>(null);
-  const [pageZoom, setPageZoom] = useState(1);
+  const [pageZoom, setPageZoom] = useState(0.5); 
   const [highResPageUrl, setHighResPageUrl] = useState<string | null>(null);
   const [imgNaturalSize, setImgNaturalSize] = useState<{w: number, h: number} | null>(null);
-  const [hoveredZoomIndex, setHoveredZoomIndex] = useState<number | null>(null);
-  const [isPanning, setIsPanning] = useState(false);
+  
+  const [points, setPoints] = useState<Point[] | null>(null);
+  const [isDraggingPoints, setIsDraggingPoints] = useState(false);
+  const [dragInfo, setDragInfo] = useState<{ index: number; type: 'corner' | 'center' } | null>(null);
+  const [pageHistory, setPageHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [isCropping, setIsCropping] = useState(true); 
+  const [showPdfHighlight, setShowPdfHighlight] = useState(true);
+
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const panStartRef = useRef<{ x: number, y: number }>({ x: 0, y: 0 });
-  const scrollStartRef = useRef<{ left: number, top: number }>({ left: 0, top: 0 });
+  const imageRef = useRef<HTMLImageElement>(null);
+  const dragStartPosRef = useRef<Point>({ x: 0, y: 0 });
+  const initialPointsRef = useRef<Point[] | null>(null);
 
   useEffect(() => {
-    if (isOpen && item.type === 'pdf') {
+    if (isOpen) {
       initializeEditor();
-      setGridZoom(1); 
-      setViewingPageIndex(null);
-      setHoveredZoomIndex(null);
-      setIsSplitPanelOpen(false);
+      setShowPdfHighlight(true);
     }
-  }, [isOpen, item]);
+  }, [isOpen]);
 
   const initializeEditor = async () => {
     setIsLoading(true);
     setPages([]);
     try {
-      await processFile(item.url, 'pdf', item.originalFile);
+      // If the current URL is different from the original URL, it means the PDF has been edited.
+      // In this case, we MUST load from the URL (which is a blob of the edited PDF)
+      // and NOT from the originalFile (which contains the raw initial PDF).
+      const isEdited = item.url !== item.originalUrl;
+      const fileToUse = isEdited ? undefined : item.originalFile;
+      
+      await processFile(item.url, item.type, fileToUse);
     } catch (e) {
-      console.error(e);
-      alert("Error initializing editor");
+      console.error("Error initializing PDF editor:", e);
     } finally {
       setIsLoading(false);
     }
@@ -73,19 +85,15 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
     if (type === 'pdf') {
       if (!window.pdfjsLib) return;
       let arrayBuffer;
-      if (file) {
-          arrayBuffer = await file.arrayBuffer();
-      } else {
-          const response = await fetch(url);
-          arrayBuffer = await response.arrayBuffer();
-      }
+      if (file) arrayBuffer = await file.arrayBuffer();
+      else arrayBuffer = await fetch(url).then(res => res.arrayBuffer());
+      
       const loadingTask = window.pdfjsLib.getDocument({ data: arrayBuffer });
       const pdf = await loadingTask.promise;
-      const numPages = pdf.numPages;
       const newPages: PdfPage[] = [];
-      for (let i = 1; i <= numPages; i++) {
+      for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
-        const viewport = page.getViewport({ scale: 0.6 });
+        const viewport = page.getViewport({ scale: 1.0 });
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
         canvas.height = viewport.height;
@@ -104,26 +112,9 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
       }
       setPages(prev => [...prev, ...newPages]);
     } else {
-      const img = new Image();
-      img.crossOrigin = 'Anonymous';
-      img.src = url;
-      await new Promise(r => img.onload = r);
-      const canvas = document.createElement('canvas');
-      const MAX_THUMB_SIZE = 1024;
-      let w = img.width;
-      let h = img.height;
-      if (w > h) {
-        if (w > MAX_THUMB_SIZE) { h *= MAX_THUMB_SIZE / w; w = MAX_THUMB_SIZE; }
-      } else {
-        if (h > MAX_THUMB_SIZE) { w *= MAX_THUMB_SIZE / h; h = MAX_THUMB_SIZE; }
-      }
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      ctx?.drawImage(img, 0, 0, w, h);
       setPages(prev => [...prev, {
         originalIndex: 0,
-        thumbnail: canvas.toDataURL(),
+        thumbnail: url,
         id: Math.random().toString(36).substr(2, 9),
         sourceUrl: url,
         sourceType: 'image',
@@ -132,332 +123,442 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
     }
   };
 
-  const renderSinglePageToPng = async (page: PdfPage): Promise<Uint8Array> => {
-    if (page.sourceType === 'image') {
-      const resp = await fetch(page.thumbnail);
-      const blob = await resp.blob();
-      return new Uint8Array(await blob.arrayBuffer());
-    }
-
-    // PDF Page rendering
-    let arrayBuffer;
-    if (page.originalFile) {
-        arrayBuffer = await page.originalFile.arrayBuffer();
-    } else {
-        arrayBuffer = await fetch(page.sourceUrl).then(res => res.arrayBuffer());
-    }
-
-    const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    const pdfPage = await pdf.getPage(page.originalIndex + 1);
-    const viewport = pdfPage.getViewport({ scale: 2.5 }); // High quality for saving
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    if (!ctx) throw new Error("Canvas context failed");
-    await pdfPage.render({ canvasContext: ctx, viewport }).promise;
-
-    const blob: Blob = await new Promise((resolve) => canvas.toBlob(b => resolve(b!), 'image/png'));
-    return new Uint8Array(await blob.arrayBuffer());
-  };
-
-  const handleAddFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    setIsLoading(true);
+  const loadHighRes = async (index: number) => {
+    setHighResPageUrl(null);
+    setImgNaturalSize(null);
+    const page = pages[index];
     try {
-      for (let i = 0; i < e.target.files.length; i++) {
-        const file = e.target.files[i];
-        const url = URL.createObjectURL(file);
-        const type = file.type === 'application/pdf' ? 'pdf' : 'image';
-        await processFile(url, type, file);
+      let url = "";
+      let w = 0, h = 0;
+      if (page.sourceType === 'pdf') {
+          let arrayBuffer;
+          if (page.originalFile) arrayBuffer = await page.originalFile.arrayBuffer();
+          else arrayBuffer = await fetch(page.sourceUrl).then(res => res.arrayBuffer());
+          const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+          const pdfPage = await pdf.getPage(page.originalIndex + 1);
+          const viewport = pdfPage.getViewport({ scale: 2.5 }); 
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          if (context) {
+             await pdfPage.render({ canvasContext: context, viewport }).promise;
+             url = canvas.toDataURL();
+             w = viewport.width; h = viewport.height;
+          }
+      } else {
+          url = page.thumbnail;
+          const img = new Image();
+          img.src = url;
+          await new Promise(r => img.onload = r);
+          w = img.width; h = img.height;
       }
-    } catch (err) {
-      console.error("Error adding files", err);
-    } finally {
+      
+      setHighResPageUrl(url);
+      setImgNaturalSize({ w, h });
+      
+      if (historyIndex === -1) {
+          setPageHistory([url]);
+          setHistoryIndex(0);
+          await triggerDetection(url, w, h);
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const triggerDetection = async (url: string, w: number, h: number) => {
+    setIsLoading(true);
+    const detected = await detectDocumentCorners(url);
+    if (detected) setPoints(detected);
+    else setPoints([{ x: w * 0.1, y: h * 0.1 }, { x: w * 0.9, y: h * 0.1 }, { x: w * 0.9, y: h * 0.9 }, { x: w * 0.1, y: h * 0.9 }]);
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    if (viewingPageIndex !== null) {
+        setPageHistory([]);
+        setHistoryIndex(-1);
+        setIsCropping(true);
+        loadHighRes(viewingPageIndex);
+    }
+  }, [viewingPageIndex]);
+
+  const addToHistory = (url: string) => {
+      const newHistory = pageHistory.slice(0, historyIndex + 1);
+      newHistory.push(url);
+      setPageHistory(newHistory);
+      setHistoryIndex(newHistory.length - 1);
+      setHighResPageUrl(url);
+      setPages(prev => prev.map((p, i) => i === viewingPageIndex ? { ...p, thumbnail: url, sourceType: 'image', originalFile: undefined } : p));
+  };
+
+  const handleRotate = async (dir: 'L' | 'R') => {
+      if (!highResPageUrl) return;
+      setIsLoading(true);
+      const angle = dir === 'L' ? -90 : 90;
+      const newUrl = await applyImageAdjustments(highResPageUrl, 100, 100, angle);
+      addToHistory(newUrl);
       setIsLoading(false);
-      e.target.value = ''; 
+  };
+
+  const handleUndo = async () => {
+      if (historyIndex > 0) {
+          const prevUrl = pageHistory[historyIndex - 1];
+          setHistoryIndex(historyIndex - 1);
+          setHighResPageUrl(prevUrl);
+          setIsCropping(true); 
+          setPages(prev => prev.map((p, i) => i === viewingPageIndex ? { ...p, thumbnail: prevUrl } : p));
+          if (imgNaturalSize) await triggerDetection(prevUrl, imgNaturalSize.w, imgNaturalSize.h);
+      }
+  };
+
+  const handleReset = async () => {
+      if (pageHistory.length > 0) {
+          const original = pageHistory[0];
+          setHistoryIndex(0);
+          setHighResPageUrl(original);
+          setIsCropping(true);
+          setPages(prev => prev.map((p, i) => i === viewingPageIndex ? { ...p, thumbnail: original } : p));
+          if (imgNaturalSize) await triggerDetection(original, imgNaturalSize.w, imgNaturalSize.h);
+      }
+  };
+
+  const handleConfirmEdit = async () => {
+      if (isCropping && points && highResPageUrl) {
+          setIsLoading(true);
+          try {
+            const cropped = await applyPerspectiveCrop(highResPageUrl, points);
+            addToHistory(cropped);
+            setIsCropping(false);
+            setPoints(null);
+          } catch(e) { console.error(e); }
+          setIsLoading(false);
+      }
+  };
+
+  const handleRecrop = async () => {
+    if (!highResPageUrl || !imgNaturalSize) return;
+    setIsCropping(true);
+    await triggerDetection(highResPageUrl, imgNaturalSize.w, imgNaturalSize.h);
+  };
+
+  const getCenterPoint = (pts: Point[]) => ({
+    x: pts.reduce((acc, p) => acc + p.x, 0) / 4,
+    y: pts.reduce((acc, p) => acc + p.y, 0) / 4,
+  });
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (viewingPageIndex === null || !points || !imageRef.current || !imgNaturalSize) return;
+    
+    const imgRect = imageRef.current.getBoundingClientRect();
+    const handleRadius = 35 / pageZoom; 
+    const scale = imgNaturalSize.w / imgRect.width;
+
+    const naturalX = (e.clientX - imgRect.left) * scale;
+    const naturalY = (e.clientY - imgRect.top) * scale;
+
+    // Check Corners
+    for (let i = 0; i < 4; i++) {
+        if (Math.hypot(naturalX - points[i].x, naturalY - points[i].y) < handleRadius) {
+            e.preventDefault();
+            setIsDraggingPoints(true);
+            setDragInfo({ index: i, type: 'corner' });
+            dragStartPosRef.current = { x: e.clientX, y: e.clientY };
+            initialPointsRef.current = JSON.parse(JSON.stringify(points));
+            return;
+        }
+    }
+    
+    // Check Center
+    const center = getCenterPoint(points);
+    if (Math.hypot(naturalX - center.x, naturalY - center.y) < handleRadius) {
+        e.preventDefault();
+        setIsDraggingPoints(true);
+        setDragInfo({ index: 8, type: 'center' });
+        dragStartPosRef.current = { x: e.clientX, y: e.clientY };
+        initialPointsRef.current = JSON.parse(JSON.stringify(points));
     }
   };
 
-  const handleSplitPdf = async () => {
-    if (!window.PDFLib || !splitRanges.trim()) return;
-    setIsLoading(true);
-    try {
-      const { PDFDocument } = window.PDFLib;
-      const ranges = splitRanges.split(',').map(r => r.trim());
+  const handleWindowMouseMove = useCallback((e: MouseEvent) => {
+    if (isDraggingPoints && points && initialPointsRef.current && dragInfo && imageRef.current && imgNaturalSize) {
+        const imgRect = imageRef.current.getBoundingClientRect();
+        const scale = imgNaturalSize.w / imgRect.width;
+        const dx = (e.clientX - dragStartPosRef.current.x) * scale;
+        const dy = (e.clientY - dragStartPosRef.current.y) * scale;
+        const newPoints = JSON.parse(JSON.stringify(initialPointsRef.current));
 
-      for (const range of ranges) {
-        const parts = range.split('-');
-        let startIdx, endIdx;
-        if (parts.length === 1) {
-          startIdx = endIdx = parseInt(parts[0]) - 1;
+        if (dragInfo.type === 'corner') {
+            newPoints[dragInfo.index].x = Math.max(0, Math.min(imgNaturalSize.w, newPoints[dragInfo.index].x + dx));
+            newPoints[dragInfo.index].y = Math.max(0, Math.min(imgNaturalSize.h, newPoints[dragInfo.index].y + dy));
         } else {
-          startIdx = parseInt(parts[0]) - 1;
-          endIdx = parseInt(parts[1]) - 1;
+            for (let i = 0; i < 4; i++) {
+                newPoints[i].x = Math.max(0, Math.min(imgNaturalSize.w, newPoints[i].x + dx));
+                newPoints[i].y = Math.max(0, Math.min(imgNaturalSize.h, newPoints[i].y + dy));
+            }
         }
-        if (isNaN(startIdx) || isNaN(endIdx) || startIdx < 0 || endIdx >= pages.length || startIdx > endIdx) continue;
-
-        const newRangePdf = await PDFDocument.create();
-        for (let i = startIdx; i <= endIdx; i++) {
-          const page = pages[i];
-          const pngBytes = await renderSinglePageToPng(page);
-          const image = await newRangePdf.embedPng(pngBytes);
-          const { width, height } = image.scale(1);
-          const newPage = newRangePdf.addPage([width, height]);
-          newPage.drawImage(image, { x: 0, y: 0, width, height });
-        }
-        
-        const pdfBytes = await newRangePdf.save();
-        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-        const downloadUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = downloadUrl;
-        a.download = `split_${range}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(downloadUrl);
-      }
-      setIsSplitPanelOpen(false);
-    } catch (error) {
-      console.error("Split Error", error);
-      alert(t.splitInvalid);
-    } finally {
-      setIsLoading(false);
+        setPoints(newPoints);
     }
-  };
+  }, [isDraggingPoints, points, dragInfo, imgNaturalSize]);
 
-  const handleSave = async () => {
-    if (!window.PDFLib) {
-      alert("PDF Lib not loaded");
-      return;
+  useEffect(() => {
+    if (isDraggingPoints) {
+        window.addEventListener('mousemove', handleWindowMouseMove);
+        const stopDrag = () => setIsDraggingPoints(false);
+        window.addEventListener('mouseup', stopDrag);
+        return () => {
+            window.removeEventListener('mousemove', handleWindowMouseMove);
+            window.removeEventListener('mouseup', stopDrag);
+        };
     }
+  }, [isDraggingPoints, handleWindowMouseMove]);
+
+  const handleSaveAll = async () => {
+    if (!window.PDFLib) return;
     setIsLoading(true);
     try {
       const { PDFDocument } = window.PDFLib;
       const newPdf = await PDFDocument.create();
-
       for (const page of pages) {
-        const pngBytes = await renderSinglePageToPng(page);
+        const resp = await fetch(page.thumbnail);
+        const blob = await resp.blob();
+        const pngBytes = new Uint8Array(await blob.arrayBuffer());
         const image = await newPdf.embedPng(pngBytes);
         const { width, height } = image.scale(1);
         const newPage = newPdf.addPage([width, height]);
         newPage.drawImage(image, { x: 0, y: 0, width, height });
       }
-
       const pdfBytes = await newPdf.save();
       const blob = new Blob([pdfBytes], { type: 'application/pdf' });
       const newUrl = URL.createObjectURL(blob);
       onUpdate({ ...item, url: newUrl });
       onClose();
-    } catch (error) {
-      console.error("Error saving PDF:", error);
-      alert("Erro ao salvar o PDF.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleDeletePage = (index: number) => {
-    const newPages = [...pages];
-    newPages.splice(index, 1);
-    setPages(newPages);
-    if (viewingPageIndex !== null && index === viewingPageIndex) setViewingPageIndex(null);
-    else if (viewingPageIndex !== null && index < viewingPageIndex) setViewingPageIndex(viewingPageIndex - 1);
-  };
-
-  const handleZoomIn = () => {
-    if (viewingPageIndex !== null) setPageZoom(prev => Math.min(prev + 0.25, 5));
-    else setGridZoom(prev => Math.min(prev + 0.25, 3));
-  };
-  const handleZoomOut = () => {
-    if (viewingPageIndex !== null) setPageZoom(prev => Math.max(prev - 0.25, 0.5));
-    else setGridZoom(prev => Math.max(prev - 0.25, 0.25));
-  };
-  const handleZoomReset = () => {
-    if (viewingPageIndex !== null) setPageZoom(1);
-    else setGridZoom(1);
-  };
-  const onDragStart = (e: React.DragEvent, index: number) => {
-    setDraggedItem(index);
-    e.dataTransfer.effectAllowed = 'move';
-  };
-  const onDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault();
-    if (draggedItem === null || draggedItem === index) return;
-    const newPages = [...pages];
-    const item = newPages.splice(draggedItem, 1)[0];
-    newPages.splice(index, 0, item);
-    setPages(newPages);
-    setDraggedItem(index);
-  };
-  const onDragEnd = () => setDraggedItem(null);
-
-  useEffect(() => {
-    const loadHighRes = async () => {
-      setHighResPageUrl(null);
-      setImgNaturalSize(null);
-      if (viewingPageIndex === null) return;
-      const page = pages[viewingPageIndex];
-      try {
-        if (page.sourceType === 'pdf') {
-            if (!window.pdfjsLib) return;
-            let arrayBuffer;
-            if (page.originalFile) arrayBuffer = await page.originalFile.arrayBuffer();
-            else {
-                const response = await fetch(page.sourceUrl);
-                arrayBuffer = await response.arrayBuffer();
-            }
-            const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-            const pdfPage = await pdf.getPage(page.originalIndex + 1);
-            const viewport = pdfPage.getViewport({ scale: 3.0 }); 
-            const canvas = document.createElement('canvas');
-            const context = canvas.getContext('2d');
-            canvas.width = viewport.width;
-            canvas.height = viewport.height;
-            if (context) {
-               await pdfPage.render({ canvasContext: context, viewport }).promise;
-               setHighResPageUrl(canvas.toDataURL());
-            }
-        } else setHighResPageUrl(page.thumbnail);
-      } catch (e) { console.error("Error rendering page view", e); }
-    };
-    loadHighRes();
-    setPageZoom(1);
-    setIsPanning(false);
-  }, [viewingPageIndex, pages]);
-
-  const handleWheel = (e: React.WheelEvent) => {
-    if (viewingPageIndex === null) return;
-    if (e.deltaY < 0) setPageZoom(prev => Math.min(prev + 0.1, 5));
-    else setPageZoom(prev => Math.max(prev - 0.1, 0.5));
-  };
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (viewingPageIndex === null || !scrollContainerRef.current) return;
-    e.preventDefault();
-    setIsPanning(true);
-    panStartRef.current = { x: e.clientX, y: e.clientY };
-    scrollStartRef.current = { left: scrollContainerRef.current.scrollLeft, top: scrollContainerRef.current.scrollTop };
-  };
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isPanning || !scrollContainerRef.current) return;
-    const dx = e.clientX - panStartRef.current.x;
-    const dy = e.clientY - panStartRef.current.y;
-    scrollContainerRef.current.scrollLeft = scrollStartRef.current.left - dx;
-    scrollContainerRef.current.scrollTop = scrollStartRef.current.top - dy;
-  };
-  const handleMouseUp = () => setIsPanning(false);
-  const getImageStyle = () => {
-    const isFit = pageZoom === 1;
-    if (!isFit && imgNaturalSize && scrollContainerRef.current) {
-        const containerW = scrollContainerRef.current.clientWidth - 64; 
-        const containerH = scrollContainerRef.current.clientHeight - 64;
-        const baseScale = Math.min(containerW / imgNaturalSize.w, containerH / imgNaturalSize.h);
-        return { width: `${imgNaturalSize.w * baseScale * pageZoom}px`, height: `${imgNaturalSize.h * baseScale * pageZoom}px`, maxWidth: 'none', maxHeight: 'none' };
-    }
-    return { maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' as const };
+    } catch (error) { console.error(error); }
+    finally { setIsLoading(false); }
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-      {hoveredZoomIndex !== null && viewingPageIndex === null && pages[hoveredZoomIndex] && (
-        <div className="fixed inset-0 z-[60] pointer-events-none flex items-center justify-center bg-black/10 backdrop-blur-[1px]">
-          <div className="bg-white dark:bg-gray-800 p-2 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-700 animate-fade-in scale-100 origin-center transition-transform">
-            <img src={pages[hoveredZoomIndex].thumbnail} alt="Preview" className="max-h-[95vh] max-w-[95vw] object-contain rounded" />
-          </div>
-        </div>
-      )}
-      <div className="bg-white dark:bg-gray-900 w-[80vw] h-[80vh] rounded-lg flex flex-col border border-gray-300 dark:border-gray-700 shadow-2xl transition-colors duration-300">
-        <div className="h-14 flex items-center justify-between px-6 border-b border-gray-200 dark:border-gray-800">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-md transition-all">
+      <div className="bg-[#0A0C10] w-full h-full flex flex-col overflow-hidden text-white">
+        
+        {/* Header */}
+        <header className="h-14 flex items-center justify-between px-6 border-b border-white/5 bg-[#0D1117] z-[110]">
           <div className="flex items-center space-x-3">
-             <h2 className="text-lg font-medium text-gray-900 dark:text-gray-200">{t.pdfEditorTitle}</h2>
-             {viewingPageIndex !== null && <span className="text-sm text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded">{t.page} {viewingPageIndex + 1} / {pages.length}</span>}
-          </div>
-          <div className="flex items-center space-x-4">
-             {viewingPageIndex === null && (
-                <button onClick={() => setIsSplitPanelOpen(!isSplitPanelOpen)} className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-sm font-medium transition ${isSplitPanelOpen ? 'bg-orange-100 text-orange-600' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
-                    <Scissors size={16} /><span>{t.splitPdf}</span>
-                </button>
+             <h2 className="text-base font-bold tracking-tight">Editor de PDF</h2>
+             {viewingPageIndex !== null && (
+               <div className="bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full text-[10px] font-black uppercase border border-emerald-500/20">
+                 Página {viewingPageIndex + 1} / {pages.length}
+               </div>
              )}
-             <div className="flex items-center space-x-1 border-r border-gray-300 dark:border-gray-700 pr-4">
-               <button onClick={handleZoomOut} className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition" title={t.zoomOut}><ZoomOut size={18} /></button>
-               <span className="text-xs w-10 text-center text-gray-500 dark:text-gray-400 font-medium select-none">{Math.round((viewingPageIndex !== null ? pageZoom : gridZoom) * 100)}%</span>
-               <button onClick={handleZoomIn} className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition" title={t.zoomIn}><ZoomIn size={18} /></button>
-               <button onClick={handleZoomReset} className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition ml-1" title={t.zoomReset}><Search size={16} /></button>
-             </div>
-             <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"><X /></button>
           </div>
-        </div>
-        <div className="flex-1 overflow-hidden relative bg-gray-100 dark:bg-gray-950 flex flex-col">
-          {isSplitPanelOpen && (
-              <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 p-4 animate-slide-down flex items-center justify-between shadow-md">
-                 <div className="flex flex-1 items-center space-x-4 max-w-2xl">
-                    <div className="flex flex-col">
-                        <label className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-tight">{t.splitIntervals}</label>
-                        <input type="text" placeholder={t.splitPlaceholder} value={splitRanges} onChange={(e) => setSplitRanges(e.target.value)} className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none w-80" />
-                    </div>
-                    <button onClick={handleSplitPdf} disabled={!splitRanges.trim() || isLoading} className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-bold transition flex items-center space-x-2 shadow-lg shadow-orange-500/20 mt-4 disabled:opacity-50">
-                        <Download size={16} /><span>{t.splitAction}</span>
-                    </button>
-                 </div>
-                 <button onClick={() => setIsSplitPanelOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
-              </div>
-          )}
-          {isLoading ? (
-            <div className="h-full flex flex-col items-center justify-center text-emerald-500">
-               <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-500 mb-4"></div><span>{t.loadingPdf}</span>
+          <div className="flex items-center space-x-6">
+             <div className="flex items-center space-x-2">
+               <button onClick={() => setPageZoom(z => Math.max(0.05, z-0.05))} className="p-1.5 text-gray-400 hover:text-white transition"><ZoomOut size={20} /></button>
+               <span className="text-[11px] font-black w-10 text-center text-gray-400 uppercase">{Math.round((viewingPageIndex !== null ? pageZoom : 1) * 100)}%</span>
+               <button onClick={() => setPageZoom(z => Math.min(5, z+0.05))} className="p-1.5 text-gray-400 hover:text-white transition"><ZoomIn size={20} /></button>
+             </div>
+             <div className="h-6 w-px bg-white/10" />
+             <button onClick={onClose} className="text-gray-400 hover:text-white transition"><X size={24} /></button>
+          </div>
+        </header>
+
+        {/* Content Area */}
+        <div className="flex-1 relative overflow-hidden bg-black flex flex-col">
+          {isLoading && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 z-[120] backdrop-blur-sm">
+               <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-emerald-500 border-r-transparent mb-4"></div>
+               <span className="text-xs font-bold text-emerald-500 uppercase tracking-widest">{t.processing}</span>
             </div>
-          ) : viewingPageIndex !== null ? (
-            <div className="w-full h-full flex flex-col">
-               <div ref={scrollContainerRef} className={`flex-1 overflow-auto flex p-0 relative ${isPanning ? 'cursor-grabbing' : 'cursor-grab'}`} onWheel={handleWheel} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
-                 <div className="min-w-full min-h-full flex items-center justify-center p-8">
-                    {highResPageUrl ? ( <img src={highResPageUrl} alt="Page View" className="shadow-2xl transition-all duration-200 m-auto block" draggable={false} onLoad={(e) => setImgNaturalSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })} style={getImageStyle()} />
-                    ) : <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-emerald-500 m-auto"></div>}
+          )}
+
+          {/* New Feature Highlight Balloon */}
+          {showPdfHighlight && !isLoading && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[130] animate-fade-in">
+              <div className="bg-emerald-600 text-white p-4 rounded-3xl shadow-2xl border border-emerald-400 max-w-sm flex items-start space-x-4 relative">
+                <div className="bg-white/20 p-2 rounded-xl">
+                  <Sparkles size={24} className="text-white animate-pulse" />
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-black text-sm uppercase tracking-tight mb-1">{t.pdfEditHighlight}</h4>
+                  <p className="text-xs text-emerald-50/80 leading-relaxed font-medium">
+                    {t.pdfEditHighlightText}
+                  </p>
+                </div>
+                <button onClick={() => setShowPdfHighlight(false)} className="p-1 hover:bg-white/10 rounded-full transition">
+                  <X size={18} />
+                </button>
+                {/* Connector point */}
+                <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-t-[8px] border-t-emerald-600" />
+              </div>
+            </div>
+          )}
+          
+          {viewingPageIndex !== null ? (
+            <div className="w-full h-full flex flex-col relative overflow-hidden">
+               {/* Scroll container robusto: centraliza se pequeno, permite scroll se grande */}
+               <div ref={scrollContainerRef} className="flex-1 overflow-auto bg-[#050608] custom-scrollbar flex p-24 relative">
+                 <div className="m-auto relative bg-white shadow-2xl" style={{ 
+                     width: imgNaturalSize ? `${imgNaturalSize.w * pageZoom}px` : 'auto', 
+                     height: imgNaturalSize ? `${imgNaturalSize.h * pageZoom}px` : 'auto' 
+                   }}>
+                    {highResPageUrl && imgNaturalSize && (
+                      <>
+                        <img 
+                          ref={imageRef} 
+                          src={highResPageUrl} 
+                          alt="Page" 
+                          className="w-full h-full block pointer-events-none" 
+                          draggable={false} 
+                        />
+                        {points && isCropping && (
+                          <svg 
+                            className="absolute inset-0 w-full h-full pointer-events-none overflow-visible z-10" 
+                            onMouseDown={handleMouseDown}
+                            style={{ pointerEvents: 'auto' }}
+                          >
+                            {(() => {
+                                const rectW = imageRef.current?.getBoundingClientRect().width || (imgNaturalSize.w * pageZoom);
+                                const scale = imgNaturalSize.w / rectW;
+                                
+                                return (
+                                    <>
+                                        <polygon 
+                                          points={points.map(p => `${p.x / scale},${p.y / scale}`).join(' ')} 
+                                          fill="rgba(16, 185, 129, 0.15)" 
+                                          stroke="#10b981" 
+                                          strokeWidth="3" 
+                                        />
+                                        
+                                        {/* Corners - Removed edge handles based on user request */}
+                                        {points.map((p, i) => (
+                                          <circle 
+                                            key={`corner-${i}`} 
+                                            cx={p.x / scale} 
+                                            cy={p.y / scale} 
+                                            r="14" 
+                                            fill="white" 
+                                            stroke="#10b981" 
+                                            strokeWidth="4" 
+                                            className="pointer-events-auto cursor-pointer shadow-xl" 
+                                          />
+                                        ))}
+                                        
+                                        {/* Center handle */}
+                                        {(() => {
+                                            const center = {
+                                              x: points.reduce((acc, p) => acc + p.x, 0) / 4,
+                                              y: points.reduce((acc, p) => acc + p.y, 0) / 4,
+                                            };
+                                            return (
+                                                <circle 
+                                                    cx={center.x / scale} 
+                                                    cy={center.y / scale} 
+                                                    r="12" 
+                                                    fill="#10b981" 
+                                                    stroke="white" 
+                                                    strokeWidth="3" 
+                                                    className="pointer-events-auto cursor-move shadow-lg" 
+                                                />
+                                            );
+                                        })()}
+                                    </>
+                                );
+                            })()}
+                          </svg>
+                        )}
+                      </>
+                    )}
                  </div>
                </div>
-               <div className="h-16 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 flex items-center justify-between px-6 z-10">
-                  <button onClick={() => setViewingPageIndex(null)} className="flex items-center text-gray-600 dark:text-gray-300 hover:text-emerald-500 transition font-medium"><Grid size={18} className="mr-2" />{t.backToGrid}</button>
-                  <div className="flex items-center space-x-4">
-                    <button disabled={viewingPageIndex <= 0} onClick={() => setViewingPageIndex(prev => prev! - 1)} className="p-2 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30 transition"><ArrowLeft size={20} /></button>
-                    <button disabled={viewingPageIndex >= pages.length - 1} onClick={() => setViewingPageIndex(prev => prev! + 1)} className="p-2 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30 transition"><ArrowRight size={20} /></button>
+
+               {/* Toolbar Inferior */}
+               <div className="h-20 bg-[#0D1117] border-t border-white/5 flex items-center justify-between px-8 z-[110]">
+                  <div className="flex items-center space-x-6">
+                    <button onClick={() => setViewingPageIndex(null)} className="flex items-center text-xs font-bold text-gray-400 hover:text-white transition uppercase tracking-wider pr-4 border-r border-white/10">
+                      <Grid size={18} className="mr-2" />
+                      Voltar para Grade
+                    </button>
+                    
+                    <div className="flex items-center bg-white/5 p-1 rounded-xl space-x-1">
+                        <button onClick={() => handleRotate('L')} className="p-3 text-gray-400 hover:text-emerald-400 hover:bg-white/5 rounded-lg transition" title="Girar Esquerda"><RotateCcw size={18} /></button>
+                        <button onClick={() => handleRotate('R')} className="p-3 text-gray-400 hover:text-emerald-400 hover:bg-white/5 rounded-lg transition" title="Girar Direita"><RotateCw size={18} /></button>
+                        <button onClick={handleUndo} disabled={historyIndex <= 0} className="p-3 text-gray-400 hover:text-emerald-400 hover:bg-white/5 rounded-lg transition disabled:opacity-20" title="Desfazer"><Undo2 size={18} /></button>
+                        <button onClick={handleReset} className="p-3 text-gray-400 hover:text-red-400 hover:bg-white/5 rounded-lg transition" title="Reiniciar"><RefreshCcw size={18} /></button>
+                    </div>
+
+                    <button 
+                      onClick={handleConfirmEdit}
+                      disabled={!isCropping}
+                      className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition flex items-center space-x-2 shadow-lg ${isCropping ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}
+                    >
+                        <Check size={18} />
+                        <span>Confirmar Edição</span>
+                    </button>
+                    
+                    {!isCropping && (
+                      <button onClick={handleRecrop} className="p-2 text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition flex items-center space-x-2 border border-emerald-500/20 px-4" title="Recortar Novamente">
+                        <CropIcon size={18} />
+                        <span className="text-[10px] font-bold uppercase">Recortar Novamente</span>
+                      </button>
+                    )}
                   </div>
-                  <div className="w-20"></div>
+
+                  <div className="flex items-center space-x-3">
+                    <button disabled={viewingPageIndex === 0} onClick={() => setViewingPageIndex(v => v! - 1)} className="p-4 rounded-full bg-white/5 hover:bg-white/10 disabled:opacity-10 transition"><ArrowLeft size={24} /></button>
+                    <button disabled={viewingPageIndex === pages.length - 1} onClick={() => setViewingPageIndex(v => v! + 1)} className="p-4 rounded-full bg-white/5 hover:bg-white/10 disabled:opacity-10 transition"><ArrowRight size={24} /></button>
+                  </div>
                </div>
             </div>
           ) : (
-            <div className="h-full overflow-y-auto p-6">
-                <div className="grid gap-4 transition-all duration-200" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${Math.max(120, 150 * gridZoom)}px, 1fr))` }}>
+            <div className="h-full overflow-y-auto p-12 bg-[#050608] custom-scrollbar">
+                <div className="grid gap-8" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(180px, 1fr))` }}>
                   {pages.map((page, index) => (
-                    <div key={page.id} draggable onDragStart={(e) => onDragStart(e, index)} onDragOver={(e) => onDragOver(e, index)} onDragEnd={onDragEnd} className={`relative group bg-white dark:bg-gray-800 p-2 rounded shadow-sm border-2 transition-colors cursor-move ${draggedItem === index ? 'border-emerald-500 opacity-50' : 'border-transparent hover:border-gray-300 dark:hover:border-gray-600'}`}>
-                      <div className="aspect-[1/1.4] bg-gray-200 dark:bg-gray-900 mb-2 overflow-hidden rounded relative">
-                        <img src={page.thumbnail} alt={`Page ${index + 1}`} className="w-full h-full object-contain" draggable={false} />
-                        <div onMouseEnter={() => setHoveredZoomIndex(index)} onMouseLeave={() => setHoveredZoomIndex(null)} onClick={(e) => { e.stopPropagation(); setViewingPageIndex(index); }} className="absolute bottom-1 right-1 p-1.5 bg-white/90 dark:bg-gray-800/90 rounded-full text-gray-600 dark:text-gray-300 hover:text-emerald-500 dark:hover:text-emerald-400 transition shadow-sm border border-gray-200 dark:border-gray-700 cursor-zoom-in"><Search size={14} /></div>
+                    <div key={page.id} className="group relative">
+                      <div 
+                        onClick={() => setViewingPageIndex(index)}
+                        className="aspect-[1/1.4] bg-[#0D1117] rounded-2xl overflow-hidden relative shadow-lg cursor-zoom-in border border-white/5 group-hover:border-emerald-500/50 transition-all duration-300"
+                      >
+                        <img src={page.thumbnail} alt="Page" className="w-full h-full object-contain" />
+                        <div className="absolute inset-0 bg-emerald-500/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <Search size={32} className="text-emerald-400" />
+                        </div>
                       </div>
-                      <div className="flex justify-between items-center text-xs text-gray-500 dark:text-gray-400 px-1">
-                        <span>{t.page} {index + 1}</span>
-                        <button onClick={() => handleDeletePage(index)} className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30"><Trash2 size={14} /></button>
+                      <div className="mt-3 flex items-center justify-between px-1">
+                        <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Pág {index + 1}</span>
+                        <button onClick={() => setPages(pages.filter((_, i) => i !== index))} className="p-1.5 text-gray-600 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition"><Trash2 size={14} /></button>
                       </div>
                     </div>
                   ))}
+                  
+                  <label className="aspect-[1/1.4] rounded-2xl border-2 border-dashed border-white/5 flex flex-col items-center justify-center text-gray-600 hover:text-emerald-500 hover:border-emerald-500/50 hover:bg-emerald-500/5 transition-all cursor-pointer group">
+                    <Plus size={32} className="mb-2 group-hover:scale-110 transition-transform" />
+                    <span className="text-[10px] font-black uppercase tracking-widest">{t.addPages}</span>
+                    <input type="file" multiple accept="application/pdf,image/*" className="hidden" onChange={(e) => {
+                      if(e.target.files) {
+                        for(let i=0; i<e.target.files.length; i++) {
+                          const file = e.target.files[i];
+                          processFile(URL.createObjectURL(file), file.type === 'application/pdf' ? 'pdf' : 'image', file);
+                        }
+                      }
+                    }}/>
+                  </label>
                 </div>
             </div>
           )}
         </div>
+
+        {/* Footer */}
         {viewingPageIndex === null && (
-          <div className="h-16 border-t border-gray-200 dark:border-gray-800 flex items-center justify-between px-6 bg-white dark:bg-gray-900">
+          <footer className="h-16 border-t border-white/5 bg-[#0D1117] flex items-center justify-between px-8">
+             <button onClick={onClose} className="text-xs font-bold text-gray-500 hover:text-white transition uppercase tracking-widest">{t.cancel}</button>
              <div className="flex items-center space-x-4">
-                <label className="cursor-pointer flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded font-medium transition text-sm">
-                    <Plus size={16} className="mr-2" />{t.addPages}<input type="file" multiple accept="application/pdf,image/*" className="hidden" onChange={handleAddFiles}/></label>
-                {pages.length > 0 && <span className="text-sm font-medium text-gray-500 dark:text-gray-400">{t.total}: {pages.length}</span>}
+                <span className="text-[10px] font-black text-gray-600 uppercase tracking-widest">{t.total}: {pages.length} itens</span>
+                <button onClick={handleSaveAll} className="bg-emerald-500 hover:bg-emerald-600 text-white px-10 py-2.5 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl shadow-emerald-500/20 transition-all active:scale-95">
+                  {t.savePdf}
+                </button>
              </div>
-             <div className="flex space-x-4">
-                <button onClick={onClose} className="px-4 py-2 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition">{t.cancel}</button>
-                <button onClick={handleSave} disabled={pages.length === 0} className="bg-emerald-500 hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white px-6 py-2 rounded font-medium flex items-center shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed">
-                <Save size={18} className="mr-2" />{t.savePdf}</button>
-             </div>
-          </div>
+          </footer>
         )}
       </div>
     </div>

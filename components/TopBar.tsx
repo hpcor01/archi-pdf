@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Globe, Moon, Sun, ChevronDown, Trash, Maximize, AlertTriangle, Undo2, Zap, X as CloseIcon } from 'lucide-react';
+import { Globe, Moon, Sun, ChevronDown, Trash, Maximize, AlertTriangle, Undo2, Zap, X as CloseIcon, Info } from 'lucide-react';
 import { AppSettings, Language, Theme } from '../types';
 import { TRANSLATIONS } from '../constants';
 
@@ -25,6 +25,7 @@ interface TopBarProps {
   toggleTheme: () => void;
   showCompressionHighlight?: boolean;
   onCloseHighlight?: () => void;
+  onShowToast?: (message: string, type: 'success' | 'error') => void;
 }
 
 const LANGUAGES: { code: Language; label: string }[] = [
@@ -55,7 +56,8 @@ const TopBar: React.FC<TopBarProps> = ({
   theme,
   toggleTheme,
   showCompressionHighlight,
-  onCloseHighlight
+  onCloseHighlight,
+  onShowToast
 }) => {
   const t = TRANSLATIONS[language];
   const [isLangOpen, setIsLangOpen] = useState(false);
@@ -165,7 +167,7 @@ const TopBar: React.FC<TopBarProps> = ({
         <div className="relative">
           <div className={`flex items-center space-x-3 transition-opacity duration-300 ${hasAnyPdf ? 'opacity-100' : 'opacity-30 pointer-events-none grayscale'}`}>
             <div className="flex flex-col items-end">
-               <span className="text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase leading-none mb-1 tracking-widest">Compress</span>
+               <span className="text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase leading-none mb-1 tracking-widest">{t.compress}</span>
                <button 
                   type="button"
                   disabled={!hasAnyPdf}
@@ -216,6 +218,13 @@ const TopBar: React.FC<TopBarProps> = ({
 
         {/* OCR Switch Toggle - Conditionally Enabled */}
         <div className={`flex items-center space-x-3 transition-opacity duration-300 ${hasAnyPdf ? 'opacity-100' : 'opacity-30 pointer-events-none grayscale'}`}>
+          <button 
+            onClick={() => onShowToast?.(t.ocrInfo, 'success')}
+            className="p-1 text-gray-400 hover:text-emerald-500 transition-colors"
+            title={t.ocrInfo}
+          >
+            <Info size={14} />
+          </button>
           <div className="flex flex-col items-end">
              <span className="text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase leading-none mb-1 tracking-widest">OCR AI</span>
              <button 
