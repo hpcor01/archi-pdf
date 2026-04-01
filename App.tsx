@@ -12,7 +12,7 @@ import { INITIAL_SETTINGS, TRANSLATIONS } from './constants';
 import { generatePDF } from './services/pdfService';
 import { autoCropImage } from './services/cvService';
 
-const APP_VERSION_LABEL = "2.7";
+const APP_VERSION_LABEL = "2.8";
 
 const App = () => {
   const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
@@ -48,6 +48,65 @@ const App = () => {
   const [showAboutInfo, setShowAboutInfo] = useState(false);
 
   const t = TRANSLATIONS[language];
+
+  useEffect(() => {
+    document.title = t.appTitle;
+    document.documentElement.lang = language;
+    const metaDescription = document.querySelector('meta[name="description"]');
+    if (metaDescription) {
+      metaDescription.setAttribute('content', t.appDescription);
+    }
+  }, [t, language]);
+
+  useEffect(() => {
+    const handlePaste = (event: ClipboardEvent) => {
+      const target = event.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+
+      const items = event.clipboardData?.items;
+      if (!items) return;
+
+      const files: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const blob = items[i].getAsFile();
+          if (blob) {
+            const file = new File([blob], `pasted-image-${Date.now()}.png`, { type: blob.type });
+            files.push(file);
+          }
+        }
+      }
+
+      if (files.length > 0) {
+        const newItems: ImageItem[] = files.map(file => {
+          const url = URL.createObjectURL(file);
+          return {
+            id: Math.random().toString(36).substr(2, 9),
+            url,
+            originalUrl: url,
+            originalFile: file,
+            name: file.name,
+            type: 'image',
+            selected: false
+          };
+        });
+
+        setDocuments(prev => {
+          if (prev.length === 0) return prev;
+          const targetIdx = prev.findIndex(d => d.selected);
+          const finalIdx = targetIdx !== -1 ? targetIdx : 0;
+          return prev.map((doc, idx) => 
+            idx === finalIdx ? { ...doc, items: [...doc.items, ...newItems] } : doc
+          );
+        });
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, []);
 
   const hasAnyPdf = useMemo(() => {
     return documents.some(doc => doc.items.some(item => item.type === 'pdf'));
@@ -192,7 +251,7 @@ const App = () => {
         })
       };
     }));
-    setToast({ visible: true, message: language === 'pt-BR' ? "Arquivo restaurado." : "File restored.", type: 'success' });
+    setToast({ visible: true, message: t.fileRestored, type: 'success' });
   };
 
   const handleRestoreItem = (docId: string, itemId: string) => {
@@ -262,14 +321,14 @@ const App = () => {
       let successCount = 0;
       for (const task of tasks) {
         try {
-          const newUrl = await autoCropImage(task.url);
+          const newUrl = await autoCropImage(task.url, t);
           if (newUrl !== task.url) successCount++;
           setDocuments(prev => prev.map(doc => doc.id === task.docId ? { ...doc, items: doc.items.map(i => i.id === task.itemId ? { ...i, url: newUrl, processing: false } : i) } : doc));
         } catch (e) {
           setDocuments(prev => prev.map(doc => doc.id === task.docId ? { ...doc, items: doc.items.map(i => i.id === task.itemId ? { ...i, processing: false } : i) } : doc));
         }
       }
-      setToast({ visible: true, message: successCount > 0 ? "Recorte concluído!" : "Nenhum documento identificado.", type: successCount > 0 ? 'success' : 'error' });
+      setToast({ visible: true, message: successCount > 0 ? t.cropSuccess : t.noDocFound, type: successCount > 0 ? 'success' : 'error' });
     } finally {
       setIsProcessing(false);
     }
@@ -284,7 +343,7 @@ const App = () => {
     if (docsToSave.length === 0) return;
     setIsSaving(true);
     try {
-      await generatePDF(docsToSave, settings.useOCR, settings.compressPdf);
+      await generatePDF(docsToSave, t, settings.useOCR, settings.compressPdf);
       setToast({ visible: true, message: t.docSaved, type: 'success' });
       setTimeout(() => handleClearAll(), 500);
     } catch (e) {
@@ -295,18 +354,13 @@ const App = () => {
   };
 
   const getChangelog = () => {
-    return language === 'pt-BR' ? [
-      "v2.7 - NOVO: Rotação de PDF, Recorte de PDF, melhorias visuais e correção de bugs menores",
-      "v2.6 - Ferramentas avançadas de Edição de PDF, Recorte de Perspectiva e correção de bugs",
-      "v2.5 - Manual do Usuário interativo e detalhado",
-      "v2.4 - Recurso de Compressão de PDF de alta performance",
-      "v2.3 - Sistema de Detecção de Atualizações Automáticas"
-    ] : [
-      "v2.7 - NEW: PDF Rotation, PDF Cropping, visual improvements and minor bug fixes",
-      "v2.6 - Advanced PDF Editing, Perspective Crop tools and bug fixes",
-      "v2.5 - Detailed and interactive User Manual",
-      "v2.4 - High-performance PDF Compression feature",
-      "v2.3 - Automatic Update Detection System"
+    return [
+      t.changelog_v2_8,
+      t.changelog_v2_7,
+      t.changelog_v2_6,
+      t.changelog_v2_5,
+      t.changelog_v2_4,
+      t.changelog_v2_3
     ];
   };
 
@@ -366,7 +420,7 @@ const App = () => {
                          <div className="flex items-center space-x-2">
                             <Sparkles size={16} className="text-white fill-white" />
                             <span className="text-xs font-black uppercase tracking-tight">
-                              {language === 'pt-BR' ? "Novo: Manual v2.7" : "New: Manual v2.7"}
+                              {t.newManual}
                             </span>
                          </div>
                          <button 
@@ -499,7 +553,7 @@ const App = () => {
 
                 <div className="mt-8 pt-6 border-t border-gray-100 dark:border-gray-800">
                    <button onClick={() => setShowManual(false)} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 rounded-2xl transition shadow-lg shadow-emerald-500/20">
-                      Entendi, vamos começar!
+                      {t.manualClose}
                    </button>
                 </div>
              </div>
@@ -547,7 +601,7 @@ const App = () => {
 
                   <div className="mt-8 flex items-center space-x-4">
                      <button onClick={() => { setShowAboutInfo(false); }} className="px-6 py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-xl font-bold hover:bg-gray-200 dark:hover:bg-gray-600 transition">
-                       Fechar
+                       {t.close}
                      </button>
                   </div>
                 </div>
