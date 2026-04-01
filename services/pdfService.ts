@@ -13,8 +13,8 @@ import { DocumentGroup } from "../types";
 /**
  * Converts a PDF file (via ArrayBuffer) into an array of PNG/JPG images (one per page)
  */
-const renderPdfToImages = async (arrayBuffer: ArrayBuffer, compress: boolean = false): Promise<{ data: Uint8Array, base64: string, format: 'png' | 'jpg' }[]> => {
-  if (!window.pdfjsLib) throw new Error("PDF.js not loaded");
+const renderPdfToImages = async (arrayBuffer: ArrayBuffer, t: any, compress: boolean = false): Promise<{ data: Uint8Array, base64: string, format: 'png' | 'jpg' }[]> => {
+  if (!window.pdfjsLib) throw new Error(t.pdfjsLoadError || "PDF.js not loaded");
   
   const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   const pages: { data: Uint8Array, base64: string, format: 'png' | 'jpg' }[] = [];
@@ -41,7 +41,7 @@ const renderPdfToImages = async (arrayBuffer: ArrayBuffer, compress: boolean = f
     
     const base64 = canvas.toDataURL(mime, quality);
     const blob: Blob = await new Promise((resolve, reject) => {
-      canvas.toBlob((b) => b ? resolve(b) : reject("Blob creation failed"), mime, quality);
+      canvas.toBlob((b) => b ? resolve(b) : reject(t.blobError || "Blob creation failed"), mime, quality);
     });
     
     const buffer = await blob.arrayBuffer();
@@ -66,7 +66,7 @@ const performOCR = async (base64: string): Promise<any[]> => {
 };
 
 // Helper to convert any image URL (blob/base64) to PNG/JPG bytes via Canvas
-const getImageInfo = async (url: string, compress: boolean = false): Promise<{ data: Uint8Array, base64: string, format: 'png' | 'jpg' }> => {
+const getImageInfo = async (url: string, t: any, compress: boolean = false): Promise<{ data: Uint8Array, base64: string, format: 'png' | 'jpg' }> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'Anonymous';
@@ -76,7 +76,7 @@ const getImageInfo = async (url: string, compress: boolean = false): Promise<{ d
       canvas.height = img.height;
       const ctx = canvas.getContext('2d');
       if (!ctx) {
-        reject(new Error("Could not get canvas context"));
+        reject(new Error(t.canvasContextError || "Could not get canvas context"));
         return;
       }
       ctx.drawImage(img, 0, 0);
@@ -88,7 +88,7 @@ const getImageInfo = async (url: string, compress: boolean = false): Promise<{ d
       const base64 = canvas.toDataURL(mime, quality);
       canvas.toBlob((blob) => {
         if (!blob) {
-          reject(new Error("Canvas to Blob failed"));
+          reject(new Error(t.blobError || "Canvas to Blob failed"));
           return;
         }
         blob.arrayBuffer().then(buffer => resolve({ data: new Uint8Array(buffer), base64, format }));
@@ -111,9 +111,9 @@ const downloadBlob = (data: Uint8Array, filename: string, mimeType: string) => {
   window.URL.revokeObjectURL(url);
 };
 
-export const generatePDF = async (groups: DocumentGroup[], useOCR: boolean = false, compressPdf: boolean = false): Promise<void> => {
+export const generatePDF = async (groups: DocumentGroup[], t: any, useOCR: boolean = false, compressPdf: boolean = false): Promise<void> => {
   if (!window.PDFLib) {
-    alert("PDF library not loaded.");
+    alert(t.pdfLibLoadError || "PDF library not loaded.");
     return;
   }
 
@@ -133,19 +133,20 @@ export const generatePDF = async (groups: DocumentGroup[], useOCR: boolean = fal
         if (item.type === 'pdf') {
            try {
              let arrayBuffer;
-             if (item.originalFile) {
+             const isEdited = item.url !== item.originalUrl;
+             if (item.originalFile && !isEdited) {
                arrayBuffer = await item.originalFile.arrayBuffer();
              } else {
                arrayBuffer = await fetch(item.url).then(res => res.arrayBuffer());
              }
-             pagesToProcess = await renderPdfToImages(arrayBuffer, compressPdf);
+             pagesToProcess = await renderPdfToImages(arrayBuffer, t, compressPdf);
            } catch (error) {
              console.error(`Error processing PDF ${item.name}:`, error);
            }
         } else {
            try {
              // Mesmo que o item original seja imagem, ao converter para PDF aplicamos compressão se solicitado
-             const info = await getImageInfo(item.url, compressPdf);
+             const info = await getImageInfo(item.url, t, compressPdf);
              pagesToProcess = [info];
            } catch (error) {
              console.error(`Error processing image ${item.name}:`, error);
@@ -207,7 +208,7 @@ export const generatePDF = async (groups: DocumentGroup[], useOCR: boolean = fal
 
     } catch (err) {
       console.error("Error creating PDF for group " + group.title, err);
-      alert(`Erro ao criar PDF ${group.title}.`);
+      alert(`${t.pdfLibLoadError || "Erro ao criar PDF"} ${group.title}.`);
     }
   }
 };
