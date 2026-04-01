@@ -65,11 +65,7 @@ const TopBar: React.FC<TopBarProps> = ({
   // Toggle OCR state with confirmation popup
   const handleOcrToggle = () => {
     if (!settings.useOCR) {
-      const message = language === 'pt-BR' 
-        ? "O processamento de PDF com texto selecionável (OCR) pode ser significativamente mais lento. Deseja ativar?" 
-        : "OCR processing may be significantly slower. Do you want to enable it?";
-      
-      if (window.confirm(message)) {
+      if (window.confirm(t.ocrConfirm)) {
         updateSetting('useOCR', true);
       }
     } else {
@@ -84,7 +80,7 @@ const TopBar: React.FC<TopBarProps> = ({
         <button 
           onClick={toggleTheme}
           className="p-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 transition"
-          title="Alternar Tema"
+          title={t.toggleTheme}
         >
           {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
         </button>
@@ -198,7 +194,7 @@ const TopBar: React.FC<TopBarProps> = ({
                      <div className="flex items-center space-x-2">
                         <Zap size={16} className="text-white fill-white" />
                         <span className="text-xs font-black uppercase tracking-tight whitespace-nowrap">
-                          {language === 'pt-BR' ? "Novo: Comprimir arquivos PDF" : "New: Compress PDF files"}
+                          {t.compressHighlight}
                         </span>
                      </div>
                      <button 
@@ -226,7 +222,7 @@ const TopBar: React.FC<TopBarProps> = ({
             <Info size={14} />
           </button>
           <div className="flex flex-col items-end">
-             <span className="text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase leading-none mb-1 tracking-widest">OCR AI</span>
+             <span className="text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase leading-none mb-1 tracking-widest">{t.useOCR}</span>
              <button 
                 type="button"
                 disabled={!hasAnyPdf}
