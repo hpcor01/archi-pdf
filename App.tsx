@@ -112,7 +112,7 @@ const App = () => {
 
   const handleAddDocument = () => {
     const newId = (documents.length + 1).toString();
-    setDocuments([...documents, { id: Date.now().toString(), title: `PDF ${newId}`, items: [], selected: false }]);
+    setDocuments([...documents, { id: Date.now().toString(), title: `PDF ${newId}`, items: [], selected: true }]);
   };
 
   const handleDeleteDocument = (id: string) => {
@@ -133,7 +133,7 @@ const App = () => {
   };
 
   const handleClearAll = () => {
-    setDocuments([{ id: Date.now().toString(), title: 'PDF 1', items: [], selected: false }]);
+    setDocuments([{ id: Date.now().toString(), title: 'PDF 1', items: [], selected: true }]);
     setBatchHistory(null);
   };
 
