@@ -170,6 +170,39 @@ export const applyPerspectiveCrop = async (imageUrl: string, points: Point[]): P
         // Always sort points before processing to guarantee TL, TR, BR, BL
         const sorted = sortPoints(points);
 
+        // Check if it's nearly a perfect axis-aligned rectangle to avoid unnecessary warping
+        // This preserves image quality by using a direct ROI crop instead of resampling
+        const [tl, tr, br, bl] = sorted;
+        const tolerance = 10; // pixels of skew tolerance
+        const isNearlyRect = 
+          Math.abs(tl.y - tr.y) < tolerance && 
+          Math.abs(bl.y - br.y) < tolerance && 
+          Math.abs(tl.x - bl.x) < tolerance && 
+          Math.abs(tr.x - br.x) < tolerance;
+
+        if (isNearlyRect) {
+          const x = Math.round(Math.min(tl.x, bl.x));
+          const y = Math.round(Math.min(tl.y, tr.y));
+          const w = Math.round(Math.max(tr.x, br.x) - x);
+          const h = Math.round(Math.max(bl.y, br.y) - y);
+          
+          if (w > 5 && h > 5) {
+            const rect = new cv.Rect(
+              Math.max(0, x), 
+              Math.max(0, y), 
+              Math.min(src.cols - x, w), 
+              Math.min(src.rows - y, h)
+            );
+            const dst = src.roi(rect);
+            const canvas = document.createElement('canvas');
+            cv.imshow(canvas, dst);
+            const dataUrl = canvas.toDataURL('image/png');
+            src.delete(); dst.delete();
+            resolve(dataUrl);
+            return;
+          }
+        }
+
         // Accurate output dimensions based on average distance to preserve aspect ratio
         const widthA = Math.hypot(sorted[2].x - sorted[3].x, sorted[2].y - sorted[3].y);
         const widthB = Math.hypot(sorted[1].x - sorted[0].x, sorted[1].y - sorted[0].y);
