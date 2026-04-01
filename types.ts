@@ -36,6 +36,16 @@ export interface CropArea {
   height: number;
 }
 
+export interface TextElement {
+  id: string;
+  text: string;
+  x: number;
+  y: number;
+  fontSize: number;
+  color: string;
+  fontFamily: string;
+}
+
 export type Language = 'pt-BR' | 'en' | 'he' | 'el' | 'es';
 export type Theme = 'light' | 'dark';
 
