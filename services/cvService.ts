@@ -19,13 +19,13 @@ interface Point {
 /**
  * Ensures OpenCV is loaded before executing a task.
  */
-const waitForCV = async (retries = 300): Promise<void> => {
+const waitForCV = async (t: any, retries = 300): Promise<void> => {
   if (window.cv && window.cv.imread && window.cv.Mat && (window.cvReady !== false)) return;
   if (retries <= 0) {
-    throw new Error("OpenCV.js não pôde ser carregado.");
+    throw new Error(t.cvLoadError || "OpenCV.js não pôde ser carregado.");
   }
   await new Promise(resolve => setTimeout(resolve, 100));
-  return waitForCV(retries - 1);
+  return waitForCV(t, retries - 1);
 };
 
 /**
@@ -41,9 +41,9 @@ const sortPoints = (pts: Point[]): Point[] => {
 /**
  * Detects document corners with an advanced computer vision pipeline.
  */
-export const detectDocumentCorners = async (imageUrl: string): Promise<Point[] | null> => {
+export const detectDocumentCorners = async (imageUrl: string, t: any): Promise<Point[] | null> => {
   try {
-    await waitForCV();
+    await waitForCV(t);
   } catch (e) {
     console.error(e);
     return null;
@@ -156,8 +156,8 @@ function findContourPoints(mat: any, scale: number, totalArea: number): Point[] 
 /**
  * Applies perspective transform (Warp) to an image given 4 corners.
  */
-export const applyPerspectiveCrop = async (imageUrl: string, points: Point[]): Promise<string> => {
-  await waitForCV();
+export const applyPerspectiveCrop = async (imageUrl: string, points: Point[], t: any): Promise<string> => {
+  await waitForCV(t);
   const cv = window.cv;
 
   return new Promise((resolve, reject) => {
@@ -242,10 +242,10 @@ export const applyPerspectiveCrop = async (imageUrl: string, points: Point[]): P
   });
 };
 
-export const autoCropImage = async (imageUrl: string): Promise<string> => {
-    const corners = await detectDocumentCorners(imageUrl);
+export const autoCropImage = async (imageUrl: string, t: any): Promise<string> => {
+    const corners = await detectDocumentCorners(imageUrl, t);
     if (!corners) return imageUrl;
-    return applyPerspectiveCrop(imageUrl, corners);
+    return applyPerspectiveCrop(imageUrl, corners, t);
 };
 
 export const applyImageAdjustments = async (
