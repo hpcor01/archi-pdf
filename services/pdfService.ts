@@ -191,7 +191,9 @@ export const generatePDF = async (groups: DocumentGroup[], useOCR: boolean = fal
                   color: rgb(0, 0, 0),
                   opacity: 0,
                 });
-              } catch (fontErr) {}
+              } catch (fontErr) {
+      console.warn('Font loading failed, falling back to standard font:', fontErr);
+    }
             }
           }
           addedPageCount++;
