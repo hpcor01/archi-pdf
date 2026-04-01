@@ -74,7 +74,7 @@ const DocumentColumn: React.FC<DocumentColumnProps> = ({
       try {
         const { docId: sourceDocId, itemId } = JSON.parse(dragData);
         onMoveItem(sourceDocId, itemId, document.id, null);
-      } catch (err) { console.error("Drop Error", err); }
+      } catch (err) { console.error(t.dropError, err); }
     }
   };
 
@@ -105,7 +105,7 @@ const DocumentColumn: React.FC<DocumentColumnProps> = ({
       try {
         const { docId: sourceDocId, itemId } = JSON.parse(dragData);
         onMoveItem(sourceDocId, itemId, document.id, index);
-      } catch (err) { console.error("Item Drop Error", err); }
+      } catch (err) { console.error(t.itemDropError, err); }
     }
   };
 
@@ -168,7 +168,7 @@ const DocumentColumn: React.FC<DocumentColumnProps> = ({
                 )}
                 {item.url !== item.originalUrl && (
                   <button onClick={() => onResetToOriginal?.(document.id, item.id)} className="text-[10px] bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 px-2 py-0.5 rounded text-blue-600 dark:text-blue-300 transition flex items-center" title={t.reset}>
-                    <RotateCcw size={11} className="mr-1" /> Cache
+                    <RotateCcw size={11} className="mr-1" /> {t.cache}
                   </button>
                 )}
               </div>
