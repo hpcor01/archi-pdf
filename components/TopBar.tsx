@@ -66,7 +66,7 @@ const TopBar: React.FC<TopBarProps> = ({
   const handleOcrToggle = () => {
     if (!settings.useOCR) {
       const message = language === 'pt-BR' 
-        ? "O processamento de OCR poderá ser significativamente mais lento. Deseja ativar?" 
+        ? "O processamento de PDF com texto selecionável (OCR) pode ser significativamente mais lento. Deseja ativar?" 
         : "OCR processing may be significantly slower. Do you want to enable it?";
       
       if (window.confirm(message)) {
