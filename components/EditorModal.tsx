@@ -1,11 +1,11 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Check, RotateCcw, ZoomIn, ZoomOut, Search, Crop as CropIcon, Sliders, RotateCw, Maximize, Sparkles, Wand2 } from 'lucide-react';
-import { ImageItem, Language } from '../types';
+import { X, Check, RotateCcw, ZoomIn, ZoomOut, Search, Crop as CropIcon, Sliders, RotateCw, Maximize, Sparkles, Wand2, Type as TypeIcon, Trash2 } from 'lucide-react';
+import { ImageItem, Language, TextElement } from '../types';
 import { detectDocumentCorners, applyPerspectiveCrop, applyImageAdjustments } from '../services/cvService';
 import { TRANSLATIONS } from '../constants';
 
-type Tool = 'none' | 'crop' | 'adjust';
+type Tool = 'none' | 'crop' | 'adjust' | 'text';
 
 interface Point {
   x: number;
@@ -31,6 +31,8 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
   const [dragInfo, setDragInfo] = useState<{ index: number; type: 'corner' | 'edge' | 'center' } | null>(null);
   const [brightness, setBrightness] = useState(100);
   const [contrast, setContrast] = useState(100);
+  const [textElements, setTextElements] = useState<TextElement[]>([]);
+  const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [isPanning, setIsPanning] = useState(false);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
@@ -69,13 +71,15 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
       setIsPanning(false);
       setBrightness(100);
       setContrast(100);
+      setTextElements([]);
+      setSelectedTextId(null);
     }
   }, [item, isOpen]);
 
   const handlePerformAutoDetection = async (url: string) => {
     if (!imageRef.current) return;
     setIsProcessing(true);
-    const detected = await detectDocumentCorners(url);
+    const detected = await detectDocumentCorners(url, t);
     if (detected) {
       setPoints(detected);
     } else {
@@ -247,7 +251,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
       setPoints(null);
       await handlePerformAutoDetection(rotatedUrl);
     } catch (err) {
-      console.error("Erro ao girar imagem", err);
+      console.error(t.rotateError, err);
     } finally {
       setIsProcessing(false);
     }
@@ -257,7 +261,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
     if (!points || isProcessing) return;
     setIsProcessing(true);
     try {
-      const croppedUrl = await applyPerspectiveCrop(currentImage, points);
+      const croppedUrl = await applyPerspectiveCrop(currentImage, points, t);
       const newHistory = history.slice(0, currentIndex + 1);
       newHistory.push(croppedUrl);
       setHistory(newHistory);
@@ -267,25 +271,88 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
       setPoints(null);
       await handlePerformAutoDetection(croppedUrl);
     } catch (err) {
-      alert("Erro ao aplicar recorte.");
+      alert(t.applyCropError);
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleAddText = () => {
+    if (!imageRef.current) return;
+    const newText: TextElement = {
+      id: Math.random().toString(36).substr(2, 9),
+      text: t.textPlaceholder,
+      x: imageRef.current.naturalWidth / 2,
+      y: imageRef.current.naturalHeight / 2,
+      fontSize: 48,
+      color: '#000000',
+      fontFamily: 'sans-serif'
+    };
+    setTextElements([...textElements, newText]);
+    setSelectedTextId(newText.id);
+    setActiveTool('text');
+  };
+
+  const handleUpdateText = (id: string, updates: Partial<TextElement>) => {
+    setTextElements(textElements.map(te => te.id === id ? { ...te, ...updates } : te));
+  };
+
+  const handleRemoveText = (id: string) => {
+    setTextElements(textElements.filter(te => te.id !== id));
+    if (selectedTextId === id) setSelectedTextId(null);
   };
 
   const handleSave = async () => {
     setIsProcessing(true);
     let finalUrl = currentImage;
     try {
+      // Create a canvas to bake everything
+      const img = new Image();
+      img.crossOrigin = "Anonymous";
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = finalUrl;
+      });
+
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error("Canvas context error");
+
+      // Apply perspective crop first if active
       if (activeTool === 'crop' && points) {
-          finalUrl = await applyPerspectiveCrop(finalUrl, points);
-      } else if (brightness !== 100 || contrast !== 100) {
-          finalUrl = await applyImageAdjustments(finalUrl, brightness, contrast, 0);
+        finalUrl = await applyPerspectiveCrop(finalUrl, points, t);
+        // Reload image after crop
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = reject;
+          img.src = finalUrl;
+        });
       }
+
+      canvas.width = img.width;
+      canvas.height = img.height;
+      
+      // Apply adjustments
+      ctx.filter = `brightness(${brightness}%) contrast(${contrast}%)`;
+      ctx.drawImage(img, 0, 0);
+      ctx.filter = 'none';
+
+      // Draw text elements
+      textElements.forEach(te => {
+        ctx.font = `${te.fontSize}px ${te.fontFamily}`;
+        ctx.fillStyle = te.color;
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'center';
+        ctx.fillText(te.text, te.x, te.y);
+      });
+
+      finalUrl = canvas.toDataURL('image/png');
+      
       onUpdate({ ...item, url: finalUrl });
       onClose();
     } catch (err) {
-      alert("Erro ao salvar.");
+      alert(t.saveError);
     } finally { setIsProcessing(false); }
   };
 
@@ -312,18 +379,18 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
               <div className={`border-2 rounded-xl p-4 transition-all ${activeTool === 'crop' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'bg-white dark:bg-gray-800 border-transparent'}`}>
                    <button onClick={() => setActiveTool(activeTool === 'crop' ? 'none' : 'crop')} className="w-full flex items-center text-left">
                      <CropIcon className={`mr-3 ${activeTool === 'crop' ? 'text-emerald-600' : 'text-gray-400'}`} size={20} />
-                     <span className={`font-bold text-sm ${activeTool === 'crop' ? 'text-emerald-900 dark:text-emerald-100' : 'text-gray-600 dark:text-gray-400'}`}>Recorte Manual</span>
+                     <span className={`font-bold text-sm ${activeTool === 'crop' ? 'text-emerald-900 dark:text-emerald-100' : 'text-gray-600 dark:text-gray-400'}`}>{t.manualCrop}</span>
                    </button>
                    {activeTool === 'crop' && (
                       <div className="mt-4 animate-fade-in space-y-3">
-                        <p className="text-[11px] text-emerald-800/70 dark:text-emerald-200/50 italic leading-relaxed">Arraste os cantos detectados para ajustar a perspectiva.</p>
+                        <p className="text-[11px] text-emerald-800/70 dark:text-emerald-200/50 italic leading-relaxed">{t.cropInstructions}</p>
                         <button 
                           onClick={handleApplyCropOnly}
                           disabled={!points || isProcessing}
                           className="w-full flex items-center justify-center space-x-2 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors shadow-sm disabled:opacity-50"
                         >
                           <Wand2 size={14} />
-                          <span>Aplicar Recorte</span>
+                          <span>{t.applyCrop}</span>
                         </button>
                       </div>
                    )}
@@ -331,22 +398,97 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
               <div className={`border-2 rounded-xl p-4 transition-all ${activeTool === 'adjust' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'bg-white dark:bg-gray-800 border-transparent'}`}>
                    <button onClick={() => setActiveTool(activeTool === 'adjust' ? 'none' : 'adjust')} className="w-full flex items-center text-left">
                      <Sliders className={`mr-3 ${activeTool === 'adjust' ? 'text-emerald-600' : 'text-gray-400'}`} size={20} />
-                     <span className={`font-bold text-sm ${activeTool === 'adjust' ? 'text-emerald-900 dark:text-emerald-100' : 'text-gray-600 dark:text-gray-400'}`}>Ajustes</span>
+                     <span className={`font-bold text-sm ${activeTool === 'adjust' ? 'text-emerald-900 dark:text-emerald-100' : 'text-gray-600 dark:text-gray-400'}`}>{t.imageTools}</span>
                    </button>
                    {activeTool === 'adjust' && (
                       <div className="mt-5 space-y-5 animate-fade-in">
                         <div className="space-y-2">
-                          <div className="flex justify-between text-[10px] font-bold text-emerald-800 dark:text-emerald-200 uppercase"><span>Brilho</span><span>{brightness}%</span></div>
+                          <div className="flex justify-between text-[10px] font-bold text-emerald-800 dark:text-emerald-200 uppercase"><span>{t.brightness}</span><span>{brightness}%</span></div>
                           <input type="range" min="0" max="200" value={brightness} onChange={(e) => setBrightness(parseInt(e.target.value))} className="w-full accent-emerald-500 h-1.5 bg-emerald-200 dark:bg-emerald-900 rounded-lg appearance-none cursor-pointer" />
                         </div>
                         <div className="space-y-2">
-                          <div className="flex justify-between text-[10px] font-bold text-emerald-800 dark:text-emerald-200 uppercase"><span>Contraste</span><span>{contrast}%</span></div>
+                          <div className="flex justify-between text-[10px] font-bold text-emerald-800 dark:text-emerald-200 uppercase"><span>{t.contrast}</span><span>{contrast}%</span></div>
                           <input type="range" min="0" max="200" value={contrast} onChange={(e) => setContrast(parseInt(e.target.value))} className="w-full accent-emerald-500 h-1.5 bg-emerald-200 dark:bg-emerald-900 rounded-lg appearance-none cursor-pointer" />
                         </div>
                         <div className="flex space-x-2 pt-2 border-t border-emerald-100 dark:border-emerald-800">
                           <button onClick={() => handleApplyRotation(-90)} className="flex-1 py-2 bg-white dark:bg-gray-700 border border-emerald-200 dark:border-emerald-800 rounded-lg hover:bg-emerald-100 transition shadow-sm text-emerald-600"><RotateCcw size={16} className="mx-auto" /></button>
                           <button onClick={() => handleApplyRotation(90)} className="flex-1 py-2 bg-white dark:bg-gray-700 border border-emerald-200 dark:border-emerald-800 rounded-lg hover:bg-emerald-100 transition shadow-sm text-emerald-600"><RotateCw size={16} className="mx-auto" /></button>
                         </div>
+                      </div>
+                   )}
+              </div>
+
+              <div className={`border-2 rounded-xl p-4 transition-all ${activeTool === 'text' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'bg-white dark:bg-gray-800 border-transparent'}`}>
+                   <button onClick={() => setActiveTool(activeTool === 'text' ? 'none' : 'text')} className="w-full flex items-center text-left">
+                     <TypeIcon className={`mr-3 ${activeTool === 'text' ? 'text-emerald-600' : 'text-gray-400'}`} size={20} />
+                     <span className={`font-bold text-sm ${activeTool === 'text' ? 'text-emerald-900 dark:text-emerald-100' : 'text-gray-600 dark:text-gray-400'}`}>{t.addText}</span>
+                   </button>
+                   {activeTool === 'text' && (
+                      <div className="mt-4 animate-fade-in space-y-4">
+                        <button 
+                          onClick={handleAddText}
+                          className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold transition-colors"
+                        >
+                          {t.addText}
+                        </button>
+
+                        {selectedTextId && (
+                          <div className="space-y-3 pt-3 border-t border-emerald-100 dark:border-emerald-800">
+                            <input 
+                              type="text" 
+                              value={textElements.find(te => te.id === selectedTextId)?.text || ''}
+                              onChange={(e) => handleUpdateText(selectedTextId, { text: e.target.value })}
+                              className="w-full p-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
+                              placeholder={t.textPlaceholder}
+                            />
+                            
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase">{t.font}</label>
+                                <select 
+                                  value={textElements.find(te => te.id === selectedTextId)?.fontFamily || 'sans-serif'}
+                                  onChange={(e) => handleUpdateText(selectedTextId, { fontFamily: e.target.value })}
+                                  className="w-full p-1 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg"
+                                >
+                                  <option value="sans-serif">Sans</option>
+                                  <option value="serif">Serif</option>
+                                  <option value="monospace">Mono</option>
+                                  <option value="cursive">Cursive</option>
+                                </select>
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase">{t.size}</label>
+                                <input 
+                                  type="number" 
+                                  value={textElements.find(te => te.id === selectedTextId)?.fontSize || 48}
+                                  onChange={(e) => handleUpdateText(selectedTextId, { fontSize: parseInt(e.target.value) })}
+                                  className="w-full p-1 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-gray-400 uppercase">{t.color}</label>
+                              <div className="flex items-center space-x-2">
+                                <input 
+                                  type="color" 
+                                  value={textElements.find(te => te.id === selectedTextId)?.color || '#000000'}
+                                  onChange={(e) => handleUpdateText(selectedTextId, { color: e.target.value })}
+                                  className="w-8 h-8 rounded cursor-pointer bg-transparent border-none"
+                                />
+                                <span className="text-xs font-mono text-gray-500">{textElements.find(te => te.id === selectedTextId)?.color}</span>
+                              </div>
+                            </div>
+
+                            <button 
+                              onClick={() => handleRemoveText(selectedTextId)}
+                              className="w-full py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-xs font-bold transition-colors flex items-center justify-center"
+                            >
+                              <Trash2 size={14} className="mr-2" />
+                              {t.removeText}
+                            </button>
+                          </div>
+                        )}
                       </div>
                    )}
               </div>
@@ -406,6 +548,53 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                     style={{ filter: `brightness(${brightness}%) contrast(${contrast}%)` }} 
                     draggable={false} 
                   />
+                  {textElements.map(te => {
+                    const scaleFactor = imageRef.current!.naturalWidth / (imgLayoutSize?.w || 1);
+                    const visualScale = zoom;
+                    return (
+                      <div 
+                        key={te.id}
+                        onMouseDown={(e) => {
+                          if (activeTool !== 'text') return;
+                          e.stopPropagation();
+                          setSelectedTextId(te.id);
+                          const startX = e.clientX;
+                          const startY = e.clientY;
+                          const initialX = te.x;
+                          const initialY = te.y;
+
+                          const onMouseMove = (moveEvent: MouseEvent) => {
+                            const dx = (moveEvent.clientX - startX) * (scaleFactor / visualScale);
+                            const dy = (moveEvent.clientY - startY) * (scaleFactor / visualScale);
+                            handleUpdateText(te.id, { 
+                              x: Math.max(0, Math.min(imageRef.current!.naturalWidth, initialX + dx)),
+                              y: Math.max(0, Math.min(imageRef.current!.naturalHeight, initialY + dy))
+                            });
+                          };
+
+                          const onMouseUp = () => {
+                            window.removeEventListener('mousemove', onMouseMove);
+                            window.removeEventListener('mouseup', onMouseUp);
+                          };
+
+                          window.addEventListener('mousemove', onMouseMove);
+                          window.addEventListener('mouseup', onMouseUp);
+                        }}
+                        className={`absolute cursor-move select-none transition-shadow ${selectedTextId === te.id ? 'ring-2 ring-emerald-500 shadow-lg' : ''}`}
+                        style={{
+                          left: `${(te.x / scaleFactor) * visualScale}px`,
+                          top: `${(te.y / scaleFactor) * visualScale}px`,
+                          fontSize: `${(te.fontSize / scaleFactor) * visualScale}px`,
+                          color: te.color,
+                          fontFamily: te.fontFamily,
+                          transform: 'translate(-50%, -50%)',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        {te.text}
+                      </div>
+                    );
+                  })}
                   {points && activeTool === 'crop' && (
                     <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
                       {(() => {
