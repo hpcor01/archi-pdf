@@ -45,16 +45,36 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
   
   const [points, setPoints] = useState<Point[] | null>(null);
   const [isDraggingPoints, setIsDraggingPoints] = useState(false);
-  const [dragInfo, setDragInfo] = useState<{ index: number; type: 'corner' | 'center' } | null>(null);
+  const [dragInfo, setDragInfo] = useState<{ index: number; type: 'corner' | 'edge' | 'center' } | null>(null);
   const [pageHistory, setPageHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [isCropping, setIsCropping] = useState(true); 
   const [showPdfHighlight, setShowPdfHighlight] = useState(true);
 
+  const [isPanning, setIsPanning] = useState(false);
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
+
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
+  const panStartRef = useRef<Point>({ x: 0, y: 0 });
+  const scrollStartRef = useRef<{ left: number, top: number }>({ left: 0, top: 0 });
   const dragStartPosRef = useRef<Point>({ x: 0, y: 0 });
   const initialPointsRef = useRef<Point[] | null>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space') setIsSpacePressed(true);
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') setIsSpacePressed(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -145,6 +165,16 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
              await pdfPage.render({ canvasContext: context, viewport }).promise;
              url = canvas.toDataURL();
              w = viewport.width; h = viewport.height;
+             
+             const containerWidth = scrollContainerRef.current?.clientWidth || window.innerWidth;
+             const containerHeight = scrollContainerRef.current?.clientHeight || window.innerHeight;
+             const padding = 48;
+             const fitZoom = Math.min(
+               (containerWidth - padding) / w,
+               (containerHeight - padding) / h,
+               1
+             );
+             setPageZoom(fitZoom);
           }
       } else {
           url = page.thumbnail;
@@ -152,6 +182,16 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
           img.src = url;
           await new Promise(r => img.onload = r);
           w = img.width; h = img.height;
+          
+          const containerWidth = scrollContainerRef.current?.clientWidth || window.innerWidth;
+          const containerHeight = scrollContainerRef.current?.clientHeight || window.innerHeight;
+          const padding = 48;
+          const fitZoom = Math.min(
+            (containerWidth - padding) / w,
+            (containerHeight - padding) / h,
+            1
+          );
+          setPageZoom(fitZoom);
       }
       
       setHighResPageUrl(url);
@@ -192,11 +232,22 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
   };
 
   const handleRotate = async (dir: 'L' | 'R') => {
-      if (!highResPageUrl) return;
+      if (!highResPageUrl || !imgNaturalSize) return;
       setIsLoading(true);
       const angle = dir === 'L' ? -90 : 90;
       const newUrl = await applyImageAdjustments(highResPageUrl, 100, 100, angle);
+      
+      // Update natural size by swapping width and height for 90-degree rotation
+      const nextW = imgNaturalSize.h;
+      const nextH = imgNaturalSize.w;
+      setImgNaturalSize({ w: nextW, h: nextH });
+      
       addToHistory(newUrl);
+      
+      // Reiniciar a ferramenta de recorte após a rotação
+      setPoints(null);
+      await triggerDetection(newUrl, nextW, nextH);
+      
       setIsLoading(false);
   };
 
@@ -246,23 +297,61 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
     y: pts.reduce((acc, p) => acc + p.y, 0) / 4,
   });
 
+  const dragScaleRef = useRef<number>(1);
+  const [magnifierPoint, setMagnifierPoint] = useState<Point | null>(null);
+
+  const getMidPoint = (p1: Point, p2: Point) => ({ x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 });
+
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (viewingPageIndex === null || !points || !imageRef.current || !imgNaturalSize) return;
+    if (viewingPageIndex === null || !imageRef.current || !imgNaturalSize) return;
+    
+    if (isSpacePressed) {
+        setIsPanning(true);
+        panStartRef.current = { x: e.clientX, y: e.clientY };
+        if (scrollContainerRef.current) {
+            scrollStartRef.current = {
+                left: scrollContainerRef.current.scrollLeft,
+                top: scrollContainerRef.current.scrollTop
+            };
+        }
+        return;
+    }
+
+    if (!points) return;
     
     const imgRect = imageRef.current.getBoundingClientRect();
-    const handleRadius = 35 / pageZoom; 
     const scale = imgNaturalSize.w / imgRect.width;
-
-    const naturalX = (e.clientX - imgRect.left) * scale;
-    const naturalY = (e.clientY - imgRect.top) * scale;
+    dragScaleRef.current = scale;
+    const clientX = e.clientX;
+    const clientY = e.clientY;
+    const handleRadius = 35; 
 
     // Check Corners
     for (let i = 0; i < 4; i++) {
-        if (Math.hypot(naturalX - points[i].x, naturalY - points[i].y) < handleRadius) {
+        const hx = imgRect.left + (points[i].x / scale);
+        const hy = imgRect.top + (points[i].y / scale);
+        if (Math.hypot(clientX - hx, clientY - hy) < handleRadius) {
             e.preventDefault();
             setIsDraggingPoints(true);
             setDragInfo({ index: i, type: 'corner' });
-            dragStartPosRef.current = { x: e.clientX, y: e.clientY };
+            setMagnifierPoint(points[i]);
+            dragStartPosRef.current = { x: clientX, y: clientY };
+            initialPointsRef.current = JSON.parse(JSON.stringify(points));
+            return;
+        }
+    }
+    
+    // Check Edges
+    for (let i = 0; i < 4; i++) {
+        const mid = getMidPoint(points[i], points[(i + 1) % 4]);
+        const hx = imgRect.left + (mid.x / scale);
+        const hy = imgRect.top + (mid.y / scale);
+        if (Math.hypot(clientX - hx, clientY - hy) < handleRadius) {
+            e.preventDefault();
+            setIsDraggingPoints(true);
+            setDragInfo({ index: i, type: 'edge' });
+            setMagnifierPoint(mid);
+            dragStartPosRef.current = { x: clientX, y: clientY };
             initialPointsRef.current = JSON.parse(JSON.stringify(points));
             return;
         }
@@ -270,19 +359,29 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
     
     // Check Center
     const center = getCenterPoint(points);
-    if (Math.hypot(naturalX - center.x, naturalY - center.y) < handleRadius) {
+    const hx = imgRect.left + (center.x / scale);
+    const hy = imgRect.top + (center.y / scale);
+    if (Math.hypot(clientX - hx, clientY - hy) < handleRadius) {
         e.preventDefault();
         setIsDraggingPoints(true);
         setDragInfo({ index: 8, type: 'center' });
-        dragStartPosRef.current = { x: e.clientX, y: e.clientY };
+        setMagnifierPoint(center);
+        dragStartPosRef.current = { x: clientX, y: clientY };
         initialPointsRef.current = JSON.parse(JSON.stringify(points));
     }
   };
 
   const handleWindowMouseMove = useCallback((e: MouseEvent) => {
-    if (isDraggingPoints && points && initialPointsRef.current && dragInfo && imageRef.current && imgNaturalSize) {
-        const imgRect = imageRef.current.getBoundingClientRect();
-        const scale = imgNaturalSize.w / imgRect.width;
+    if (isPanning && scrollContainerRef.current) {
+        const dx = e.clientX - panStartRef.current.x;
+        const dy = e.clientY - panStartRef.current.y;
+        scrollContainerRef.current.scrollLeft = scrollStartRef.current.left - dx;
+        scrollContainerRef.current.scrollTop = scrollStartRef.current.top - dy;
+        return;
+    }
+
+    if (isDraggingPoints && initialPointsRef.current && dragInfo && imgNaturalSize) {
+        const scale = dragScaleRef.current;
         const dx = (e.clientX - dragStartPosRef.current.x) * scale;
         const dy = (e.clientY - dragStartPosRef.current.y) * scale;
         const newPoints = JSON.parse(JSON.stringify(initialPointsRef.current));
@@ -290,27 +389,41 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
         if (dragInfo.type === 'corner') {
             newPoints[dragInfo.index].x = Math.max(0, Math.min(imgNaturalSize.w, newPoints[dragInfo.index].x + dx));
             newPoints[dragInfo.index].y = Math.max(0, Math.min(imgNaturalSize.h, newPoints[dragInfo.index].y + dy));
+            setMagnifierPoint(newPoints[dragInfo.index]);
+        } else if (dragInfo.type === 'edge') {
+            const idx1 = dragInfo.index;
+            const idx2 = (dragInfo.index + 1) % 4;
+            newPoints[idx1].x = Math.max(0, Math.min(imgNaturalSize.w, newPoints[idx1].x + dx));
+            newPoints[idx1].y = Math.max(0, Math.min(imgNaturalSize.h, newPoints[idx1].y + dy));
+            newPoints[idx2].x = Math.max(0, Math.min(imgNaturalSize.w, newPoints[idx2].x + dx));
+            newPoints[idx2].y = Math.max(0, Math.min(imgNaturalSize.h, newPoints[idx2].y + dy));
+            setMagnifierPoint(getMidPoint(newPoints[idx1], newPoints[idx2]));
         } else {
             for (let i = 0; i < 4; i++) {
                 newPoints[i].x = Math.max(0, Math.min(imgNaturalSize.w, newPoints[i].x + dx));
                 newPoints[i].y = Math.max(0, Math.min(imgNaturalSize.h, newPoints[i].y + dy));
             }
+            setMagnifierPoint(getCenterPoint(newPoints));
         }
         setPoints(newPoints);
     }
-  }, [isDraggingPoints, points, dragInfo, imgNaturalSize]);
+  }, [isDraggingPoints, dragInfo, imgNaturalSize, isPanning]);
 
   useEffect(() => {
-    if (isDraggingPoints) {
+    if (isDraggingPoints || isPanning) {
         window.addEventListener('mousemove', handleWindowMouseMove);
-        const stopDrag = () => setIsDraggingPoints(false);
+        const stopDrag = () => {
+            setIsDraggingPoints(false);
+            setIsPanning(false);
+            setMagnifierPoint(null);
+        };
         window.addEventListener('mouseup', stopDrag);
         return () => {
             window.removeEventListener('mousemove', handleWindowMouseMove);
             window.removeEventListener('mouseup', stopDrag);
         };
     }
-  }, [isDraggingPoints, handleWindowMouseMove]);
+  }, [isDraggingPoints, isPanning, handleWindowMouseMove]);
 
   const handleSaveAll = async () => {
     if (!window.PDFLib) return;
@@ -393,29 +506,54 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
               </div>
             </div>
           )}
+
+          {/* Magnifier (Lupa) */}
+          {isDraggingPoints && points && dragInfo && imageRef.current && highResPageUrl && magnifierPoint && (
+            <div className="fixed top-20 right-20 w-56 h-56 border-4 border-emerald-500 rounded-full overflow-hidden shadow-2xl z-[150] bg-white dark:bg-gray-800 pointer-events-none">
+              {(() => {
+                const targetPoint = magnifierPoint;
+                
+                return (
+                  <div 
+                    className="absolute inset-0 origin-top-left" 
+                    style={{
+                      backgroundImage: `url(${highResPageUrl})`,
+                      backgroundSize: `${imgNaturalSize!.w * 5}px ${imgNaturalSize!.h * 5}px`,
+                      backgroundPosition: `-${targetPoint.x * 5 - 112}px -${targetPoint.y * 5 - 112}px`,
+                      backgroundRepeat: 'no-repeat'
+                    }}
+                  />
+                );
+              })()}
+              <div className="absolute inset-0 flex items-center justify-center">
+                 <div className="w-6 h-6 border-2 border-emerald-500 rounded-full shadow-lg" />
+                 <div className="absolute w-[1px] h-full bg-emerald-500/50" />
+                 <div className="absolute h-[1px] w-full bg-emerald-500/50" />
+              </div>
+            </div>
+          )}
           
           {viewingPageIndex !== null ? (
             <div className="w-full h-full flex flex-col relative overflow-hidden">
                {/* Scroll container robusto: centraliza se pequeno, permite scroll se grande */}
                <div ref={scrollContainerRef} className="flex-1 overflow-auto bg-[#050608] custom-scrollbar flex p-24 relative">
-                 <div className="m-auto relative bg-white shadow-2xl" style={{ 
+                 <div className={`m-auto relative bg-white shadow-2xl ${isPanning ? 'cursor-grabbing' : isSpacePressed ? 'cursor-grab' : ''}`} style={{ 
                      width: imgNaturalSize ? `${imgNaturalSize.w * pageZoom}px` : 'auto', 
                      height: imgNaturalSize ? `${imgNaturalSize.h * pageZoom}px` : 'auto' 
-                   }}>
+                   }} onMouseDown={handleMouseDown}>
                     {highResPageUrl && imgNaturalSize && (
                       <>
                         <img 
                           ref={imageRef} 
                           src={highResPageUrl} 
                           alt="Page" 
-                          className="w-full h-full block pointer-events-none" 
+                          className="w-full h-full block pointer-events-none object-contain max-w-none max-h-none" 
                           draggable={false} 
                         />
                         {points && isCropping && (
                           <svg 
-                            className="absolute inset-0 w-full h-full pointer-events-none overflow-visible z-10" 
-                            onMouseDown={handleMouseDown}
-                            style={{ pointerEvents: 'auto' }}
+                            className={`absolute inset-0 w-full h-full pointer-events-none overflow-visible z-10 ${isPanning || isSpacePressed ? 'pointer-events-none' : 'pointer-events-auto'}`} 
+                            style={{ pointerEvents: isPanning || isSpacePressed ? 'none' : 'auto' }}
                           >
                             {(() => {
                                 const rectW = imageRef.current?.getBoundingClientRect().width || (imgNaturalSize.w * pageZoom);
@@ -430,7 +568,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
                                           strokeWidth="3" 
                                         />
                                         
-                                        {/* Corners - Removed edge handles based on user request */}
+                                        {/* Corners */}
                                         {points.map((p, i) => (
                                           <circle 
                                             key={`corner-${i}`} 
@@ -443,6 +581,25 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
                                             className="pointer-events-auto cursor-pointer shadow-xl" 
                                           />
                                         ))}
+                                        
+                                        {/* Edge handles */}
+                                        {[0, 1, 2, 3].map((i) => {
+                                          const mid = getMidPoint(points[i], points[(i + 1) % 4]);
+                                          const p1 = points[i];
+                                          const p2 = points[(i+1)%4];
+                                          const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI;
+                                          return (
+                                            <rect 
+                                              key={`edge-${i}`} 
+                                              x={mid.x / scale - 18} 
+                                              y={mid.y / scale - 6} 
+                                              width="36" height="12" rx="6"
+                                              fill="#ffffff" stroke="#10b981" strokeWidth="2.5" 
+                                              style={{ transform: `rotate(${angle}deg)`, transformOrigin: `${mid.x/scale}px ${mid.y/scale}px` }}
+                                              className="pointer-events-auto cursor-pointer shadow-lg" 
+                                            />
+                                          );
+                                        })}
                                         
                                         {/* Center handle */}
                                         {(() => {
