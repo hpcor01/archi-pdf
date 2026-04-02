@@ -143,15 +143,18 @@ const DocumentColumn: React.FC<DocumentColumnProps> = ({
                  <>
                    <img src={item.url} alt={item.name} className="w-full h-full object-cover" />
                    {item.processing && <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-20"><div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin"></div></div>}
-                   <button className="absolute top-0 right-0 w-8 h-8 bg-white/90 dark:bg-gray-900/80 hover:bg-emerald-500 hover:text-white text-gray-600 dark:text-gray-300 flex items-center justify-center transition-colors z-10 rounded-bl-lg" onMouseEnter={() => setHoveredPreviewId(item.id)} onMouseLeave={() => setHoveredPreviewId(null)} onClick={(e) => { e.stopPropagation(); onEditItem(item); }}><Search size={16} /></button>
+                   <button className="absolute top-0 right-0 w-8 h-8 bg-white/90 dark:bg-gray-900/80 hover:bg-emerald-500 hover:text-white text-gray-600 dark:text-gray-300 flex items-center justify-center transition-colors z-10 rounded-bl-lg" onMouseEnter={() => setHoveredPreviewId(item.id)} onClick={(e) => { e.stopPropagation(); onEditItem(item); }}><Search size={16} /></button>
                  </>
                ) : <FileText className="text-red-500" size={40} />}
             </div>
 
             {hoveredPreviewId === item.id && item.type === 'image' && (
-              <div className="fixed inset-0 z-[100] pointer-events-none flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                 <div className="bg-white dark:bg-gray-900 p-2 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-2xl max-w-[90vw] max-h-[90vh]">
+              <div className="fixed inset-0 z-[100] pointer-events-auto flex items-center justify-center bg-black/40 backdrop-blur-sm cursor-pointer" onClick={(e) => { e.stopPropagation(); setHoveredPreviewId(null); }}>
+                 <div className="bg-white dark:bg-gray-900 p-2 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-2xl max-w-[90vw] max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
                     <img src={item.url} alt="Preview" className="max-w-full max-h-[85vh] object-contain rounded-xl" />
+                    <div className="mt-2 flex justify-center">
+                      <button onClick={(e) => { e.stopPropagation(); setHoveredPreviewId(null); onEditItem(item); }} className="text-xs bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-1.5 rounded-lg font-bold uppercase tracking-wider transition">{t.edit}</button>
+                    </div>
                  </div>
               </div>
             )}
