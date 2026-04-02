@@ -366,7 +366,7 @@ const App = () => {
 
   return (
     <div className={theme}>
-      <div className="flex flex-col h-screen w-screen bg-gray-100 dark:bg-gray-950 text-gray-900 dark:text-white font-sans transition-colors duration-300 relative">
+      <div className="flex flex-col h-screen w-full bg-gray-100 dark:bg-gray-950 text-gray-900 dark:text-white font-sans transition-colors duration-300 relative overflow-x-hidden">
         <TopBar 
           settings={settings} updateSetting={handleUpdateSetting} onSave={handleSave}
           onClearAll={handleClearAll} onRemoveBgBatch={handleBatchAutoCrop}
@@ -385,7 +385,7 @@ const App = () => {
         <main className="flex-1 overflow-hidden p-4 sm:p-6 flex flex-col">
           <div className="flex-1 w-full border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-3xl relative flex flex-col overflow-hidden transition-colors dark:bg-[#232B3A]">
             <div className="flex-1 overflow-x-auto overflow-y-hidden p-4 sm:p-6 custom-scrollbar">
-              <div className="flex h-full"> 
+              <div className="flex h-full min-w-full"> 
                 {documents.map(doc => (
                   <DocumentColumn 
                     key={doc.id} document={doc} settings={settings} onAddItem={handleAddItem}
