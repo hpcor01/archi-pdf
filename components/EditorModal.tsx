@@ -241,7 +241,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
     if (isProcessing) return;
     setIsProcessing(true);
     try {
-      const rotatedUrl = await applyImageAdjustments(currentImage, 100, 100, angle);
+      const rotatedUrl = await applyImageAdjustments(currentImage, 100, 100, angle, t);
       const newHistory = history.slice(0, currentIndex + 1);
       newHistory.push(rotatedUrl);
       setHistory(newHistory);

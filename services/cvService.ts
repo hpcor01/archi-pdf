@@ -249,8 +249,9 @@ export const autoCropImage = async (imageUrl: string, t: any): Promise<string> =
 };
 
 export const applyImageAdjustments = async (
-    imageUrl: string, brightness: number, contrast: number, rotation: number = 0
+    imageUrl: string, brightness: number, contrast: number, rotation: number = 0, t: any
 ): Promise<string> => {
+    await waitForCV(t);
     return new Promise((resolve, reject) => {
         const img = new Image();
         img.crossOrigin = "Anonymous";

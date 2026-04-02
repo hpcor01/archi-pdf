@@ -95,7 +95,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
       
       await processFile(item.url, item.type, fileToUse);
     } catch (e) {
-      console.error("Error initializing PDF editor:", e);
+      console.error(t.initEditorError, e);
     } finally {
       setIsLoading(false);
     }
@@ -207,7 +207,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
 
   const triggerDetection = async (url: string, w: number, h: number) => {
     setIsLoading(true);
-    const detected = await detectDocumentCorners(url);
+    const detected = await detectDocumentCorners(url, t);
     if (detected) setPoints(detected);
     else setPoints([{ x: w * 0.1, y: h * 0.1 }, { x: w * 0.9, y: h * 0.1 }, { x: w * 0.9, y: h * 0.9 }, { x: w * 0.1, y: h * 0.9 }]);
     setIsLoading(false);
@@ -235,7 +235,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
       if (!highResPageUrl || !imgNaturalSize) return;
       setIsLoading(true);
       const angle = dir === 'L' ? -90 : 90;
-      const newUrl = await applyImageAdjustments(highResPageUrl, 100, 100, angle);
+      const newUrl = await applyImageAdjustments(highResPageUrl, 100, 100, angle, t);
       
       // Update natural size by swapping width and height for 90-degree rotation
       const nextW = imgNaturalSize.h;
@@ -277,7 +277,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
       if (isCropping && points && highResPageUrl) {
           setIsLoading(true);
           try {
-            const cropped = await applyPerspectiveCrop(highResPageUrl, points);
+            const cropped = await applyPerspectiveCrop(highResPageUrl, points, t);
             addToHistory(cropped);
             setIsCropping(false);
             setPoints(null);
@@ -426,26 +426,71 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
   }, [isDraggingPoints, isPanning, handleWindowMouseMove]);
 
   const handleSaveAll = async () => {
-    if (!window.PDFLib) return;
+    if (!window.PDFLib || !window.pdfjsLib) return;
     setIsLoading(true);
     try {
       const { PDFDocument } = window.PDFLib;
       const newPdf = await PDFDocument.create();
+      
       for (const page of pages) {
-        const resp = await fetch(page.thumbnail);
-        const blob = await resp.blob();
-        const pngBytes = new Uint8Array(await blob.arrayBuffer());
-        const image = await newPdf.embedPng(pngBytes);
-        const { width, height } = image.scale(1);
-        const newPage = newPdf.addPage([width, height]);
-        newPage.drawImage(image, { x: 0, y: 0, width, height });
+        let pngBytes: Uint8Array | null = null;
+        
+        if (page.sourceType === 'pdf') {
+          // For unedited PDF pages, render them in high resolution (scale 2.5)
+          try {
+            let arrayBuffer;
+            if (page.originalFile) {
+              arrayBuffer = await page.originalFile.arrayBuffer();
+            } else {
+              arrayBuffer = await fetch(page.sourceUrl).then(res => res.arrayBuffer());
+            }
+            
+            const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            const pdfPage = await pdf.getPage(page.originalIndex + 1);
+            const viewport = pdfPage.getViewport({ scale: 2.5 });
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            
+            if (context) {
+              await pdfPage.render({ canvasContext: context, viewport }).promise;
+              const dataUrl = canvas.toDataURL('image/png');
+              const resp = await fetch(dataUrl);
+              const blob = await resp.blob();
+              pngBytes = new Uint8Array(await blob.arrayBuffer());
+            }
+          } catch (err) {
+            console.error(t.renderHighResError, err);
+            // Fallback to thumbnail if high-res fails
+            const resp = await fetch(page.thumbnail);
+            const blob = await resp.blob();
+            pngBytes = new Uint8Array(await blob.arrayBuffer());
+          }
+        } else {
+          // For edited pages (sourceType === 'image'), use the thumbnail which is already high-res
+          const resp = await fetch(page.thumbnail);
+          const blob = await resp.blob();
+          pngBytes = new Uint8Array(await blob.arrayBuffer());
+        }
+
+        if (pngBytes) {
+          const image = await newPdf.embedPng(pngBytes);
+          const { width, height } = image.scale(1);
+          const newPage = newPdf.addPage([width, height]);
+          newPage.drawImage(image, { x: 0, y: 0, width, height });
+        }
       }
+      
       const pdfBytes = await newPdf.save();
       const blob = new Blob([pdfBytes], { type: 'application/pdf' });
       const newUrl = URL.createObjectURL(blob);
       onUpdate({ ...item, url: newUrl });
       onClose();
-    } catch (error) { console.error(error); }
+    } catch (error) { 
+      console.error(t.savePdfError, error);
+      alert(t.savePdfError);
+    }
     finally { setIsLoading(false); }
   };
 
@@ -458,10 +503,10 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
         {/* Header */}
         <header className="h-14 flex items-center justify-between px-6 border-b border-white/5 bg-[#0D1117] z-[110]">
           <div className="flex items-center space-x-3">
-             <h2 className="text-base font-bold tracking-tight">Editor de PDF</h2>
+             <h2 className="text-base font-bold tracking-tight">{t.pdfEditorTitle}</h2>
              {viewingPageIndex !== null && (
                <div className="bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full text-[10px] font-black uppercase border border-emerald-500/20">
-                 Página {viewingPageIndex + 1} / {pages.length}
+                 {t.page} {viewingPageIndex + 1} / {pages.length}
                </div>
              )}
           </div>
@@ -634,14 +679,14 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
                   <div className="flex items-center space-x-6">
                     <button onClick={() => setViewingPageIndex(null)} className="flex items-center text-xs font-bold text-gray-400 hover:text-white transition uppercase tracking-wider pr-4 border-r border-white/10">
                       <Grid size={18} className="mr-2" />
-                      Voltar para Grade
+                      {t.backToGrid}
                     </button>
                     
                     <div className="flex items-center bg-white/5 p-1 rounded-xl space-x-1">
-                        <button onClick={() => handleRotate('L')} className="p-3 text-gray-400 hover:text-emerald-400 hover:bg-white/5 rounded-lg transition" title="Girar Esquerda"><RotateCcw size={18} /></button>
-                        <button onClick={() => handleRotate('R')} className="p-3 text-gray-400 hover:text-emerald-400 hover:bg-white/5 rounded-lg transition" title="Girar Direita"><RotateCw size={18} /></button>
-                        <button onClick={handleUndo} disabled={historyIndex <= 0} className="p-3 text-gray-400 hover:text-emerald-400 hover:bg-white/5 rounded-lg transition disabled:opacity-20" title="Desfazer"><Undo2 size={18} /></button>
-                        <button onClick={handleReset} className="p-3 text-gray-400 hover:text-red-400 hover:bg-white/5 rounded-lg transition" title="Reiniciar"><RefreshCcw size={18} /></button>
+                        <button onClick={() => handleRotate('L')} className="p-3 text-gray-400 hover:text-emerald-400 hover:bg-white/5 rounded-lg transition" title={t.rotateLeft}><RotateCcw size={18} /></button>
+                        <button onClick={() => handleRotate('R')} className="p-3 text-gray-400 hover:text-emerald-400 hover:bg-white/5 rounded-lg transition" title={t.rotateRight}><RotateCw size={18} /></button>
+                        <button onClick={handleUndo} disabled={historyIndex <= 0} className="p-3 text-gray-400 hover:text-emerald-400 hover:bg-white/5 rounded-lg transition disabled:opacity-20" title={t.undo}><Undo2 size={18} /></button>
+                        <button onClick={handleReset} className="p-3 text-gray-400 hover:text-red-400 hover:bg-white/5 rounded-lg transition" title={t.reset}><RefreshCcw size={18} /></button>
                     </div>
 
                     <button 
@@ -650,13 +695,13 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
                       className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition flex items-center space-x-2 shadow-lg ${isCropping ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}
                     >
                         <Check size={18} />
-                        <span>Confirmar Edição</span>
+                        <span>{t.confirm}</span>
                     </button>
                     
                     {!isCropping && (
-                      <button onClick={handleRecrop} className="p-2 text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition flex items-center space-x-2 border border-emerald-500/20 px-4" title="Recortar Novamente">
+                      <button onClick={handleRecrop} className="p-2 text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition flex items-center space-x-2 border border-emerald-500/20 px-4" title={t.recrop}>
                         <CropIcon size={18} />
-                        <span className="text-[10px] font-bold uppercase">Recortar Novamente</span>
+                        <span className="text-[10px] font-bold uppercase">{t.recrop}</span>
                       </button>
                     )}
                   </div>
@@ -682,7 +727,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
                         </div>
                       </div>
                       <div className="mt-3 flex items-center justify-between px-1">
-                        <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Pág {index + 1}</span>
+                        <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">{t.pageShort} {index + 1}</span>
                         <button onClick={() => setPages(pages.filter((_, i) => i !== index))} className="p-1.5 text-gray-600 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition"><Trash2 size={14} /></button>
                       </div>
                     </div>
@@ -710,7 +755,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
           <footer className="h-16 border-t border-white/5 bg-[#0D1117] flex items-center justify-between px-8">
              <button onClick={onClose} className="text-xs font-bold text-gray-500 hover:text-white transition uppercase tracking-widest">{t.cancel}</button>
              <div className="flex items-center space-x-4">
-                <span className="text-[10px] font-black text-gray-600 uppercase tracking-widest">{t.total}: {pages.length} itens</span>
+                <span className="text-[10px] font-black text-gray-600 uppercase tracking-widest">{t.total}: {pages.length} {t.items}</span>
                 <button onClick={handleSaveAll} className="bg-emerald-500 hover:bg-emerald-600 text-white px-10 py-2.5 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl shadow-emerald-500/20 transition-all active:scale-95">
                   {t.savePdf}
                 </button>
