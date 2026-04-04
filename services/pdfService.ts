@@ -11,23 +11,63 @@ declare global {
 import { DocumentGroup } from "../types";
 
 /**
+ * Simple concurrency controller
+ */
+const pLimit = (concurrency: number) => {
+  const queue: (() => Promise<any>)[] = [];
+  let activeCount = 0;
+
+  const next = () => {
+    activeCount--;
+    if (queue.length > 0) {
+      queue.shift()!();
+    }
+  };
+
+  return <T>(fn: () => Promise<T>): Promise<T> => {
+    return new Promise((resolve, reject) => {
+      const run = async () => {
+        activeCount++;
+        try {
+          const result = await fn();
+          resolve(result);
+        } catch (err) {
+          reject(err);
+        } finally {
+          next();
+        }
+      };
+
+      if (activeCount < concurrency) {
+        run();
+      } else {
+        queue.push(run);
+      }
+    });
+  };
+};
+
+/**
  * Converts a PDF file (via ArrayBuffer) into an array of PNG/JPG images (one per page)
  */
 const renderPdfToImages = async (arrayBuffer: ArrayBuffer, t: any, compress: boolean = false): Promise<{ data: Uint8Array, base64: string, format: 'png' | 'jpg' }[]> => {
   if (!window.pdfjsLib) throw new Error(t.pdfjsLoadError || "PDF.js not loaded");
   
   const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  const pages: { data: Uint8Array, base64: string, format: 'png' | 'jpg' }[] = [];
-
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    // Use lower scale for compression (balanced resolution)
-    const scale = compress ? 1.5 : 2.0;
+  const pageIndices = Array.from({ length: pdf.numPages }, (_, i) => i + 1);
+  
+  // Limita concorrência para não travar o navegador em PDFs gigantes
+  const limit = pLimit(3);
+  
+  const renderPage = async (index: number) => {
+    const page = await pdf.getPage(index);
+    // Reduzimos o scale de 1.5 para 1.25 para aumentar compressão mantendo nitidez razoável
+    const scale = compress ? 1.25 : 2.0;
     const viewport = page.getViewport({ scale });
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
     
-    if (!context) continue;
+    if (!context) return null;
     
     canvas.height = viewport.height;
     canvas.width = viewport.width;
@@ -36,8 +76,8 @@ const renderPdfToImages = async (arrayBuffer: ArrayBuffer, t: any, compress: boo
     
     const format = compress ? 'jpg' : 'png';
     const mime = compress ? 'image/jpeg' : 'image/png';
-    // Qualidade 0.6 é o sweet spot para compressão de documentos sem perda de leitura
-    const quality = compress ? 0.6 : 1.0;
+    // Reduzimos qualidade de 0.6 para 0.5 para maior compressão sem artefatos visíveis de leitura
+    const quality = compress ? 0.5 : 1.0;
     
     const base64 = canvas.toDataURL(mime, quality);
     const blob: Blob = await new Promise((resolve, reject) => {
@@ -45,10 +85,11 @@ const renderPdfToImages = async (arrayBuffer: ArrayBuffer, t: any, compress: boo
     });
     
     const buffer = await blob.arrayBuffer();
-    pages.push({ data: new Uint8Array(buffer), base64, format });
-  }
-  
-  return pages;
+    return { data: new Uint8Array(buffer), base64, format };
+  };
+
+  const results = await Promise.all(pageIndices.map(index => limit(() => renderPage(index))));
+  return results.filter(Boolean) as { data: Uint8Array, base64: string, format: 'png' | 'jpg' }[];
 };
 
 /**
@@ -83,7 +124,8 @@ const getImageInfo = async (url: string, t: any, compress: boolean = false): Pro
       
       const format = compress ? 'jpg' : 'png';
       const mime = compress ? 'image/jpeg' : 'image/png';
-      const quality = compress ? 0.6 : 1.0;
+      // Ajustando para qualidade 0.5 se compressão estiver ativa
+      const quality = compress ? 0.5 : 1.0;
 
       const base64 = canvas.toDataURL(mime, quality);
       canvas.toBlob((blob) => {
@@ -127,32 +169,55 @@ export const generatePDF = async (groups: DocumentGroup[], t: any, useOCR: boole
       const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
       let addedPageCount = 0;
 
-      for (const item of group.items) {
-        let pagesToProcess: { data: Uint8Array, base64: string, format: 'png' | 'jpg' }[] = [];
+      // Limitamos concorrência para processamento de itens (imagens e PDFs de origem)
+      const itemLimit = pLimit(2);
+
+      const itemsProcessed = await Promise.all(group.items.map(item => itemLimit(async () => {
+        let pages: { 
+          data: Uint8Array, 
+          base64: string, 
+          format: 'png' | 'jpg',
+          words?: any[] 
+        }[] = [];
 
         if (item.type === 'pdf') {
-           try {
-             let arrayBuffer;
-             const isEdited = item.url !== item.originalUrl;
-             if (item.originalFile && !isEdited) {
-               arrayBuffer = await item.originalFile.arrayBuffer();
-             } else {
-               arrayBuffer = await fetch(item.url).then(res => res.arrayBuffer());
-             }
-             pagesToProcess = await renderPdfToImages(arrayBuffer, t, compressPdf);
-           } catch (error) {
-             console.error(`Error processing PDF ${item.name}:`, error);
-           }
+          try {
+            let arrayBuffer;
+            const isEdited = item.url !== item.originalUrl;
+            if (item.originalFile && !isEdited) {
+              arrayBuffer = await item.originalFile.arrayBuffer();
+            } else {
+              arrayBuffer = await fetch(item.url).then(res => res.arrayBuffer());
+            }
+            pages = await renderPdfToImages(arrayBuffer, t, compressPdf);
+          } catch (error) {
+            console.error(`Error processing PDF ${item.name}:`, error);
+          }
         } else {
-           try {
-             // Mesmo que o item original seja imagem, ao converter para PDF aplicamos compressão se solicitado
-             const info = await getImageInfo(item.url, t, compressPdf);
-             pagesToProcess = [info];
-           } catch (error) {
-             console.error(`Error processing image ${item.name}:`, error);
-           }
+          try {
+            const info = await getImageInfo(item.url, t, compressPdf);
+            pages = [info];
+          } catch (error) {
+            console.error(`Error processing image ${item.name}:`, error);
+          }
         }
 
+        // Se OCR estiver ativo, processamos aqui em paralelo (dentro do limite de itens)
+        if (useOCR && pages.length > 0) {
+          await Promise.all(pages.map(async (page) => {
+            try {
+              page.words = await performOCR(page.base64);
+            } catch (err) {
+              console.error("OCR failed for page", err);
+              page.words = [];
+            }
+          }));
+        }
+
+        return pages;
+      })));
+
+      for (const pagesToProcess of itemsProcessed) {
         for (const pageInfo of pagesToProcess) {
           let image;
           if (pageInfo.format === 'jpg') {
@@ -165,17 +230,14 @@ export const generatePDF = async (groups: DocumentGroup[], t: any, useOCR: boole
           const page = pdfDoc.addPage([width, height]);
           page.drawImage(image, { x: 0, y: 0, width, height });
 
-          if (useOCR) {
-            console.log(`Performing local OCR on page...`);
-            const words = await performOCR(pageInfo.base64);
-            
+          if (useOCR && pageInfo.words) {
             const img = new Image();
             img.src = pageInfo.base64;
             await new Promise(r => img.onload = r);
             const naturalW = img.width;
             const naturalH = img.height;
 
-            for (const word of words) {
+            for (const word of pageInfo.words) {
               const { x0, y0, x1, y1 } = word.bbox;
               
               const pdfX = (x0 / naturalW) * width;
@@ -193,8 +255,8 @@ export const generatePDF = async (groups: DocumentGroup[], t: any, useOCR: boole
                   opacity: 0,
                 });
               } catch (fontErr) {
-      console.warn('Font loading failed, falling back to standard font:', fontErr);
-    }
+                console.warn('Font loading failed, falling back to standard font:', fontErr);
+              }
             }
           }
           addedPageCount++;
@@ -203,7 +265,8 @@ export const generatePDF = async (groups: DocumentGroup[], t: any, useOCR: boole
 
       if (addedPageCount === 0) continue;
 
-      const pdfBytes = await pdfDoc.save();
+      // useObjectStreams: true compacta ainda mais o PDF agrupando metadados
+      const pdfBytes = await pdfDoc.save({ useObjectStreams: true });
       downloadBlob(pdfBytes, `${group.title}.pdf`, 'application/pdf');
 
     } catch (err) {
