@@ -4,6 +4,7 @@ import { X, Save, Trash2, ArrowLeft, ArrowRight, ZoomIn, ZoomOut, Search, Grid, 
 import { ImageItem, Language, AppSettings } from '../types';
 import { TRANSLATIONS } from '../constants';
 import { detectDocumentCorners, applyPerspectiveCrop, applyImageAdjustments } from '../services/cvService';
+import { pdfCacheService } from '../services/pdfCacheService';
 import {
   DndContext,
   closestCenter,
@@ -42,7 +43,7 @@ interface PdfEditorModalProps {
   language: Language;
 }
 
-interface PdfPage {
+export interface PdfPage {
   originalIndex: number;
   thumbnail: string;
   id: string;
@@ -148,7 +149,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
 
   const [showSplitDialog, setShowSplitDialog] = useState(false);
-  const [splitRangeText, setSplitRangeText] = useState("");
+  const [splitRanges, setSplitRanges] = useState<string[]>([""]);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -189,6 +190,15 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
     setIsLoading(true);
     setPages([]);
     try {
+      // 1. Tentar carregar do cache primeiro (Instantâneo)
+      const cached = await pdfCacheService.get(item.id);
+      if (cached && cached.pages && cached.pages.length > 0) {
+        setPages(cached.pages);
+        setIsLoading(false);
+        return;
+      }
+
+      // 2. Se não houver cache, processar o arquivo
       const isEdited = item.url !== item.originalUrl;
       const fileToUse = isEdited ? undefined : item.originalFile;
       await processFile(item.url, item.type, fileToUse);
@@ -240,7 +250,15 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
         );
 
         const validPages = chunkPages.filter(Boolean) as PdfPage[];
-        setPages(prev => [...prev, ...validPages]);
+        
+        // Atualizar estado e persistir cache progressivamente no final
+        setPages(prev => {
+          const newPages = [...prev, ...validPages];
+          if (newPages.length === (pdf as any).numPages) {
+            pdfCacheService.save(item.id, newPages, arrayBuffer);
+          }
+          return newPages;
+        });
       }
     } else {
       setPages(prev => [...prev, {
@@ -583,6 +601,10 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
       const pdfBytes = await newPdf.save();
       const blob = new Blob([pdfBytes], { type: 'application/pdf' });
       const newUrl = URL.createObjectURL(blob);
+      
+      // Atualizar cache com as páginas atuais (com edições)
+      await pdfCacheService.save(item.id, pages);
+      
       onUpdate({ ...item, url: newUrl });
       onClose();
     } catch (error) {
@@ -593,35 +615,44 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
     }
   };
 
-  const parseRanges = (text: string, maxPages: number): number[][] => {
-    return text.split(',').map(rangeStr => {
-      const part = rangeStr.trim();
+  const parseRanges = (text: string, maxPages: number): number[] => {
+    const docPages: number[] = [];
+    const parts = text.split(',');
+    
+    parts.forEach(partStr => {
+      const part = partStr.trim();
+      if (!part) return;
+      
       if (part.includes('-')) {
         const [start, end] = part.split('-').map(n => parseInt(n.trim(), 10));
-        if (isNaN(start) || isNaN(end)) return [];
-        const indices = [];
-        const s = Math.max(1, start);
-        const e = Math.min(maxPages, end);
-        if (s <= e) {
-          for (let i = s; i <= e; i++) indices.push(i - 1);
-        } else {
-          for (let i = s; i >= e; i--) indices.push(i - 1);
+        if (!isNaN(start) && !isNaN(end)) {
+          const s = Math.max(1, start);
+          const e = Math.min(maxPages, end);
+          if (s <= e) {
+            for (let i = s; i <= e; i++) docPages.push(i - 1);
+          } else {
+            for (let i = s; i >= e; i--) docPages.push(i - 1);
+          }
         }
-        return indices;
       } else {
         const pageNum = parseInt(part, 10);
         if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= maxPages) {
-          return [pageNum - 1];
+          docPages.push(pageNum - 1);
         }
-        return [];
       }
-    }).filter(range => range.length > 0);
+    });
+    return docPages;
   };
 
   const handleSplit = async () => {
-    if (!window.PDFLib || !window.JSZip || pages.length === 0) return;
-    const ranges = parseRanges(splitRangeText, pages.length);
-    if (ranges.length === 0) {
+    if (!window.PDFLib || pages.length === 0) return;
+    
+    // Validar intervalos
+    const validRanges = splitRanges
+      .map(r => parseRanges(r, pages.length))
+      .filter(indices => indices.length > 0);
+
+    if (validRanges.length === 0) {
       alert(t.splitInvalid);
       return;
     }
@@ -636,11 +667,10 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
         return await PDFDocument.load(arrayBuffer);
       };
 
-      const splitResults: { blob: Blob; name: string }[] = [];
-      const zip = (!settings || !settings.saveSeparately) ? new window.JSZip() : null;
+      const newItems: ImageItem[] = [];
 
-      for (let i = 0; i < ranges.length; i++) {
-        const indices = ranges[i];
+      for (let i = 0; i < validRanges.length; i++) {
+        const indices = validRanges[i];
         const newPdf = await PDFDocument.create();
         
         for (const pageIdx of indices) {
@@ -658,38 +688,28 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
         const baseName = item.name.replace(/\.[^/.]+$/, "");
         const fileName = `${baseName}_Parte_${i + 1}.pdf`;
         const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-        splitResults.push({ blob, name: fileName });
+        const url = URL.createObjectURL(blob);
 
-        if (zip) {
-          zip.file(fileName, pdfBytes);
-        } else {
-          // Download individualmente
-          const link = document.createElement('a');
-          link.href = URL.createObjectURL(blob);
-          link.download = fileName;
-          link.click();
-          URL.revokeObjectURL(link.href);
-        }
+        const newItemId = Math.random().toString(36).substr(2, 9);
+        const newItem = {
+          id: newItemId,
+          url,
+          originalUrl: url,
+          name: fileName,
+          type: 'pdf' as const,
+          selected: true
+        };
+
+        // Otimalização: Pré-salvar no cache as páginas do novo segmento para abertura instantânea
+        const segmentPages = indices.map((idx, newIdx) => ({
+          ...pages[idx],
+          originalIndex: newIdx, // No novo arquivo, o índice muda
+          id: Math.random().toString(36).substr(2, 9),
+        }));
+        await pdfCacheService.save(newItemId, segmentPages, pdfBytes);
+
+        newItems.push(newItem);
       }
-
-      if (zip) {
-        const content = await zip.generateAsync({ type: "blob" });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(content);
-        link.download = `${item.name.replace(/\.[^/.]+$/, "")}_Dividido.zip`;
-        link.click();
-        URL.revokeObjectURL(link.href);
-      }
-
-      // Adicionar novas colunas no app
-      const newItems: ImageItem[] = splitResults.map(res => ({
-        id: Math.random().toString(36).substr(2, 9),
-        url: URL.createObjectURL(res.blob),
-        originalUrl: URL.createObjectURL(res.blob),
-        name: res.name,
-        type: 'pdf',
-        selected: true
-      }));
 
       onSplit(newItems);
       onClose();
@@ -1048,38 +1068,68 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
                 <span>{t.splitPdf}</span>
               </h3>
               <p className="text-sm text-gray-400 mb-6 font-medium leading-relaxed">
-                Cada intervalo gerará uma nova coluna no aplicativo.
+                Cada campo abaixo criará uma nova coluna no aplicativo.
               </p>
               
-              <div className="space-y-4">
-                <div>
-                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 block">{t.splitIntervals}</label>
-                  <input 
-                    autoFocus
-                    type="text"
-                    placeholder={t.splitPlaceholder}
-                    value={splitRangeText}
-                    onChange={(e) => setSplitRangeText(e.target.value)}
-                    className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition uppercase placeholder:normal-case font-bold"
-                    onKeyDown={(e) => e.key === 'Enter' && handleSplit()}
-                  />
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4 pt-4">
-                  <button 
-                    onClick={() => setShowSplitDialog(false)}
-                    className="px-6 py-3 rounded-xl border border-white/5 text-xs font-black uppercase tracking-widest text-gray-500 hover:text-white hover:bg-white/5 transition"
-                  >
-                    {t.cancel}
-                  </button>
-                  <button 
-                    onClick={handleSplit}
-                    disabled={!splitRangeText.trim()}
-                    className="px-6 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-30 text-white text-xs font-black uppercase tracking-widest shadow-xl shadow-emerald-500/20 transition-all active:scale-95"
-                  >
-                    {t.splitAction}
-                  </button>
-                </div>
+              <div className="space-y-4 max-h-[40vh] overflow-y-auto pr-2 custom-scrollbar">
+                {splitRanges.map((range, idx) => (
+                  <div key={idx} className="flex items-center space-x-2 group">
+                    <div className="flex-1">
+                      <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1.5 block">
+                        Documento {idx + 1}
+                      </label>
+                      <input 
+                        autoFocus={idx === splitRanges.length - 1}
+                        type="text"
+                        placeholder="Ex: 1-3 ou 5, 7, 9"
+                        value={range}
+                        onChange={(e) => {
+                          const newRanges = [...splitRanges];
+                          newRanges[idx] = e.target.value;
+                          setSplitRanges(newRanges);
+                        }}
+                        className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition font-bold"
+                        onKeyDown={(e) => e.key === 'Enter' && handleSplit()}
+                      />
+                    </div>
+                    {splitRanges.length > 1 && (
+                      <button 
+                        onClick={() => setSplitRanges(splitRanges.filter((_, i) => i !== idx))}
+                        className="mt-5 p-2.5 rounded-xl text-gray-500 hover:text-red-400 hover:bg-red-400/10 transition-all opacity-0 group-hover:opacity-100"
+                        title="Remover documento"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+
+                <button 
+                  onClick={() => setSplitRanges([...splitRanges, ""])}
+                  className="w-full py-3 rounded-xl border border-dashed border-white/10 text-emerald-400 hover:border-emerald-500/50 hover:bg-emerald-500/5 transition-all flex items-center justify-center space-x-2 text-xs font-black uppercase tracking-widest"
+                >
+                  <Plus size={16} />
+                  <span>Adicionar Documento</span>
+                </button>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4 pt-6 border-t border-white/5 mt-6">
+                <button 
+                  onClick={() => {
+                    setShowSplitDialog(false);
+                    setSplitRanges([""]);
+                  }}
+                  className="px-6 py-3 rounded-xl border border-white/5 text-xs font-black uppercase tracking-widest text-gray-500 hover:text-white hover:bg-white/5 transition"
+                >
+                  {t.cancel}
+                </button>
+                <button 
+                  onClick={handleSplit}
+                  disabled={!splitRanges.some(r => r.trim())}
+                  className="px-6 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-30 text-white text-xs font-black uppercase tracking-widest shadow-xl shadow-emerald-500/20 transition-all active:scale-95"
+                >
+                  {t.splitAction}
+                </button>
               </div>
             </div>
           </div>
