@@ -240,6 +240,24 @@ const App = () => {
     }));
   };
 
+  const handleSplitToNewColumns = (segments: ImageItem[]) => {
+    if (!editingItem) return;
+    setDocuments(prev => {
+      const originalDoc = prev.find(d => d.id === editingItem.docId);
+      if (!originalDoc) return prev;
+      
+      const newGroups: DocumentGroup[] = segments.map((item, idx) => ({
+        id: Math.random().toString(36).substr(2, 9),
+        title: `${originalDoc.title} - Parte ${idx + 1}`,
+        items: [item],
+        selected: true
+      }));
+
+      return [...prev, ...newGroups];
+    });
+    setEditingItem(null);
+  };
+
   const handleResetToOriginal = (docId: string, itemId: string) => {
     setDocuments(prev => prev.map(doc => {
       if (doc.id !== docId) return doc;
@@ -612,7 +630,17 @@ const App = () => {
         <Toast message={toast.message} type={toast.type} isVisible={toast.visible} onClose={() => setToast({ ...toast, visible: false })} language={language} />
         <UpdateNotification isVisible={isUpdateAvailable} onUpdate={handleUpdateApp} language={language} />
         {editingItem && editingItem.item.type === 'image' && <EditorModal item={editingItem.item} isOpen={!!editingItem} onClose={() => setEditingItem(null)} onUpdate={handleUpdateItem} language={language} />}
-        {editingItem && editingItem.item.type === 'pdf' && <PdfEditorModal item={editingItem.item} isOpen={!!editingItem} onClose={() => setEditingItem(null)} onUpdate={handleUpdateItem} language={language} />}
+        {editingItem && editingItem.item.type === 'pdf' && (
+          <PdfEditorModal 
+            item={editingItem.item} 
+            isOpen={!!editingItem} 
+            onClose={() => setEditingItem(null)} 
+            onUpdate={handleUpdateItem} 
+            onSplit={handleSplitToNewColumns}
+            settings={settings}
+            language={language} 
+          />
+        )}
       </div>
     </div>
   );

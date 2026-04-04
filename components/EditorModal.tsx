@@ -33,6 +33,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
   const [contrast, setContrast] = useState(100);
   const [textElements, setTextElements] = useState<TextElement[]>([]);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [isPanning, setIsPanning] = useState(false);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
@@ -73,6 +74,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
       setContrast(100);
       setTextElements([]);
       setSelectedTextId(null);
+      setEditingTextId(null);
     }
   }, [item, isOpen]);
 
@@ -300,6 +302,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
   const handleRemoveText = (id: string) => {
     setTextElements(textElements.filter(te => te.id !== id));
     if (selectedTextId === id) setSelectedTextId(null);
+    if (editingTextId === id) setEditingTextId(null);
   };
 
   const handleSave = async () => {
@@ -555,7 +558,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                       <div 
                         key={te.id}
                         onMouseDown={(e) => {
-                          if (activeTool !== 'text') return;
+                          if (activeTool !== 'text' || editingTextId === te.id) return;
                           e.stopPropagation();
                           setSelectedTextId(te.id);
                           const startX = e.clientX;
@@ -580,7 +583,12 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                           window.addEventListener('mousemove', onMouseMove);
                           window.addEventListener('mouseup', onMouseUp);
                         }}
-                        className={`absolute cursor-move select-none transition-shadow ${selectedTextId === te.id ? 'ring-2 ring-emerald-500 shadow-lg' : ''}`}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          setEditingTextId(te.id);
+                          setSelectedTextId(te.id);
+                        }}
+                        className={`absolute cursor-move select-none transition-shadow ${selectedTextId === te.id ? 'ring-2 ring-emerald-500 shadow-lg' : ''} ${editingTextId === te.id ? 'z-50 ring-0 shadow-none' : ''}`}
                         style={{
                           left: `${(te.x / scaleFactor) * visualScale}px`,
                           top: `${(te.y / scaleFactor) * visualScale}px`,
@@ -588,10 +596,34 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                           color: te.color,
                           fontFamily: te.fontFamily,
                           transform: 'translate(-50%, -50%)',
-                          whiteSpace: 'nowrap'
+                          whiteSpace: 'nowrap',
+                          pointerEvents: activeTool === 'text' ? 'auto' : 'none'
                         }}
                       >
-                        {te.text}
+                        {editingTextId === te.id ? (
+                           <input
+                             autoFocus
+                             className="bg-transparent border-none outline-none text-center p-0 m-0 w-auto min-w-[50px]"
+                             style={{ 
+                               color: te.color, 
+                               fontFamily: te.fontFamily, 
+                               fontSize: 'inherit',
+                               width: `${te.text.length + 1}ch`
+                             }}
+                             value={te.text}
+                             onChange={(e) => handleUpdateText(te.id, { text: e.target.value })}
+                             onBlur={() => setEditingTextId(null)}
+                             onKeyDown={(e) => {
+                               if (e.key === 'Enter' || e.key === 'Escape') {
+                                 setEditingTextId(null);
+                               }
+                             }}
+                             onClick={(e) => e.stopPropagation()}
+                             onMouseDown={(e) => e.stopPropagation()}
+                           />
+                        ) : (
+                          te.text
+                        )}
                       </div>
                     );
                   })}

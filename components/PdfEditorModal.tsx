@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Save, Trash2, ArrowLeft, ArrowRight, ZoomIn, ZoomOut, Search, Grid, Plus, RotateCcw, RotateCw, Undo2, RefreshCcw, Check, Crop as CropIcon, Sparkles, GripVertical } from 'lucide-react';
-import { ImageItem, Language } from '../types';
+import { ImageItem, Language, AppSettings } from '../types';
 import { TRANSLATIONS } from '../constants';
 import { detectDocumentCorners, applyPerspectiveCrop, applyImageAdjustments } from '../services/cvService';
 import {
@@ -28,6 +28,7 @@ declare global {
   interface Window {
     pdfjsLib: any;
     PDFLib: any;
+    JSZip: any;
   }
 }
 
@@ -36,6 +37,8 @@ interface PdfEditorModalProps {
   isOpen: boolean;
   onClose: () => void;
   onUpdate: (updatedItem: ImageItem) => void;
+  onSplit: (segments: ImageItem[]) => void;
+  settings: AppSettings;
   language: Language;
 }
 
@@ -123,7 +126,7 @@ const SortablePageItem: React.FC<SortablePageItemProps> = ({ page, index, pageSh
 };
 
 // --- Main Component ---
-const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, onUpdate, language }) => {
+const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, onUpdate, onSplit, settings, language }) => {
   const t = TRANSLATIONS[language];
   const [pages, setPages] = useState<PdfPage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -143,6 +146,9 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
   const [isPanning, setIsPanning] = useState(false);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+
+  const [showSplitDialog, setShowSplitDialog] = useState(false);
+  const [splitRangeText, setSplitRangeText] = useState("");
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -587,6 +593,115 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
     }
   };
 
+  const parseRanges = (text: string, maxPages: number): number[][] => {
+    return text.split(',').map(rangeStr => {
+      const part = rangeStr.trim();
+      if (part.includes('-')) {
+        const [start, end] = part.split('-').map(n => parseInt(n.trim(), 10));
+        if (isNaN(start) || isNaN(end)) return [];
+        const indices = [];
+        const s = Math.max(1, start);
+        const e = Math.min(maxPages, end);
+        if (s <= e) {
+          for (let i = s; i <= e; i++) indices.push(i - 1);
+        } else {
+          for (let i = s; i >= e; i--) indices.push(i - 1);
+        }
+        return indices;
+      } else {
+        const pageNum = parseInt(part, 10);
+        if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= maxPages) {
+          return [pageNum - 1];
+        }
+        return [];
+      }
+    }).filter(range => range.length > 0);
+  };
+
+  const handleSplit = async () => {
+    if (!window.PDFLib || !window.JSZip || pages.length === 0) return;
+    const ranges = parseRanges(splitRangeText, pages.length);
+    if (ranges.length === 0) {
+      alert(t.splitInvalid);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const { PDFDocument } = window.PDFLib;
+      const getSourcePdf = async (url: string, file?: File): Promise<any> => {
+        let arrayBuffer: ArrayBuffer;
+        if (file) arrayBuffer = await file.arrayBuffer();
+        else arrayBuffer = await fetch(url).then(res => res.arrayBuffer());
+        return await PDFDocument.load(arrayBuffer);
+      };
+
+      const splitResults: { blob: Blob; name: string }[] = [];
+      const zip = (!settings || !settings.saveSeparately) ? new window.JSZip() : null;
+
+      for (let i = 0; i < ranges.length; i++) {
+        const indices = ranges[i];
+        const newPdf = await PDFDocument.create();
+        
+        for (const pageIdx of indices) {
+          const page = pages[pageIdx];
+          if (page.sourceType === 'pdf' && !page.isModified) {
+            const sourcePdf = await getSourcePdf(page.sourceUrl, page.originalFile);
+            const [copiedPage] = await newPdf.copyPages(sourcePdf, [page.originalIndex]);
+            newPdf.addPage(copiedPage);
+          } else {
+            await renderPageAsImage(page, newPdf);
+          }
+        }
+
+        const pdfBytes = await newPdf.save();
+        const baseName = item.name.replace(/\.[^/.]+$/, "");
+        const fileName = `${baseName}_Parte_${i + 1}.pdf`;
+        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+        splitResults.push({ blob, name: fileName });
+
+        if (zip) {
+          zip.file(fileName, pdfBytes);
+        } else {
+          // Download individualmente
+          const link = document.createElement('a');
+          link.href = URL.createObjectURL(blob);
+          link.download = fileName;
+          link.click();
+          URL.revokeObjectURL(link.href);
+        }
+      }
+
+      if (zip) {
+        const content = await zip.generateAsync({ type: "blob" });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(content);
+        link.download = `${item.name.replace(/\.[^/.]+$/, "")}_Dividido.zip`;
+        link.click();
+        URL.revokeObjectURL(link.href);
+      }
+
+      // Adicionar novas colunas no app
+      const newItems: ImageItem[] = splitResults.map(res => ({
+        id: Math.random().toString(36).substr(2, 9),
+        url: URL.createObjectURL(res.blob),
+        originalUrl: URL.createObjectURL(res.blob),
+        name: res.name,
+        type: 'pdf',
+        selected: true
+      }));
+
+      onSplit(newItems);
+      onClose();
+    } catch (error) {
+      console.error(error);
+      alert(t.savePdfError);
+    } finally {
+      setIsLoading(false);
+      setShowSplitDialog(false);
+    }
+  };
+
   const renderPageAsImage = async (page: PdfPage, newPdf: any) => {
     const { PDFDocument } = window.PDFLib;
     let pngBytes: Uint8Array | null = null;
@@ -909,11 +1024,65 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
             <button onClick={onClose} className="text-xs font-bold text-gray-500 hover:text-white transition uppercase tracking-widest">{t.cancel}</button>
             <div className="flex items-center space-x-4">
               <span className="text-[10px] font-black text-gray-600 uppercase tracking-widest">{t.total}: {pages.length} {t.items}</span>
+              <button 
+                onClick={() => setShowSplitDialog(true)}
+                className="bg-white/5 hover:bg-white/10 text-emerald-400 border border-emerald-500/20 px-6 py-2.5 rounded-xl font-black uppercase text-xs tracking-widest transition-all active:scale-95 flex items-center space-x-2"
+              >
+                <RefreshCcw size={16} />
+                <span>{t.splitPdf}</span>
+              </button>
               <button onClick={handleSaveAll} className="bg-emerald-500 hover:bg-emerald-600 text-white px-10 py-2.5 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl shadow-emerald-500/20 transition-all active:scale-95">
                 {t.savePdf}
               </button>
             </div>
           </footer>
+        )}
+
+        {/* Split Dialog Overlay */}
+        {showSplitDialog && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowSplitDialog(false)} />
+            <div className="bg-[#161B22] border border-white/10 p-8 rounded-3xl shadow-2xl w-full max-w-md relative z-10 animate-fade-in">
+              <h3 className="text-xl font-black uppercase tracking-tight mb-2 flex items-center space-x-3">
+                <RefreshCcw className="text-emerald-500" />
+                <span>{t.splitPdf}</span>
+              </h3>
+              <p className="text-sm text-gray-400 mb-6 font-medium leading-relaxed">
+                Cada intervalo gerará uma nova coluna no aplicativo.
+              </p>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 block">{t.splitIntervals}</label>
+                  <input 
+                    autoFocus
+                    type="text"
+                    placeholder={t.splitPlaceholder}
+                    value={splitRangeText}
+                    onChange={(e) => setSplitRangeText(e.target.value)}
+                    className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition uppercase placeholder:normal-case font-bold"
+                    onKeyDown={(e) => e.key === 'Enter' && handleSplit()}
+                  />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4 pt-4">
+                  <button 
+                    onClick={() => setShowSplitDialog(false)}
+                    className="px-6 py-3 rounded-xl border border-white/5 text-xs font-black uppercase tracking-widest text-gray-500 hover:text-white hover:bg-white/5 transition"
+                  >
+                    {t.cancel}
+                  </button>
+                  <button 
+                    onClick={handleSplit}
+                    disabled={!splitRangeText.trim()}
+                    className="px-6 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-30 text-white text-xs font-black uppercase tracking-widest shadow-xl shadow-emerald-500/20 transition-all active:scale-95"
+                  >
+                    {t.splitAction}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>
