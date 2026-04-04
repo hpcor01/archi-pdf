@@ -151,6 +151,8 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
   const [showSplitDialog, setShowSplitDialog] = useState(false);
   const [splitRanges, setSplitRanges] = useState<string[]>([""]);
 
+  const loadIdRef = useRef(0);
+
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const panStartRef = useRef<Point>({ x: 0, y: 0 });
@@ -187,37 +189,54 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
   }, [isOpen]);
 
   const initializeEditor = async () => {
+    // 1. Incrementar ID de carga para cancelar processos anteriores
+    loadIdRef.current += 1;
+    const currentLoadId = loadIdRef.current;
+    
     setIsLoading(true);
     setPages([]);
     try {
-      // 1. Tentar carregar do cache primeiro (Instantâneo)
+      // 2. Tentar carregar do cache primeiro (Instantâneo)
       const cached = await pdfCacheService.get(item.id);
+      
+      // Verificar se ainda somos o processo atual antes de aplicar o cache
+      if (loadIdRef.current !== currentLoadId) return;
+
       if (cached && cached.pages && cached.pages.length > 0) {
+        console.debug('[PDF Cache] Hit!', item.id);
         setPages(cached.pages);
         setIsLoading(false);
         return;
       }
+      console.debug('[PDF Cache] Miss...', item.id);
 
-      // 2. Se não houver cache, processar o arquivo
+      // 3. Se não houver cache, processar o arquivo
       const isEdited = item.url !== item.originalUrl;
       const fileToUse = isEdited ? undefined : item.originalFile;
-      await processFile(item.url, item.type, fileToUse);
+      await processFile(item.url, item.type, fileToUse, currentLoadId);
     } catch (e) {
-      console.error(t.initEditorError, e);
+      if (loadIdRef.current === currentLoadId) {
+        console.error(t.initEditorError, e);
+      }
     } finally {
-      setIsLoading(false);
+      if (loadIdRef.current === currentLoadId) {
+        setIsLoading(false);
+      }
     }
   };
 
   // Optimized: loads pages in parallel chunks of 3
-  const processFile = async (url: string, type: 'pdf' | 'image', file?: File) => {
+  const processFile = async (url: string, type: 'pdf' | 'image', file: File | undefined, currentLoadId: number) => {
     if (type === 'pdf') {
       if (!window.pdfjsLib) return;
       let arrayBuffer: ArrayBuffer;
       if (file) arrayBuffer = await file.arrayBuffer();
       else arrayBuffer = await fetch(url).then(res => res.arrayBuffer());
 
-      const loadingTask = window.pdfjsLib.getDocument({ data: arrayBuffer });
+      // IMPORTANTE: Clonar o buffer antes de passar para o PDF.js
+      // O PDF.js "desvincula" (detaches) o ArrayBuffer original por performance, 
+      // o que impedia a gravação no cache (IndexedDB) gerando DataCloneError.
+      const loadingTask = window.pdfjsLib.getDocument({ data: arrayBuffer.slice(0) });
       const pdf = await loadingTask.promise;
 
       const CHUNK_SIZE = 3;
@@ -249,18 +268,39 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
           })
         );
 
+        // Verificar se ainda somos o processo atual antes de atualizar estado
+        if (loadIdRef.current !== currentLoadId) {
+          console.debug('[PDF Render] Process aborted (currentLoadId mismatch)', item.id);
+          return;
+        }
+
         const validPages = chunkPages.filter(Boolean) as PdfPage[];
         
-        // Atualizar estado e persistir cache progressivamente no final
-        setPages(prev => {
-          const newPages = [...prev, ...validPages];
-          if (newPages.length === (pdf as any).numPages) {
-            pdfCacheService.save(item.id, newPages, arrayBuffer);
-          }
-          return newPages;
+        // Atualizar estado progressivamente
+        setPages(prev => [...prev, ...validPages]);
+
+        // "Respiro" para o navegador não travar e continuar em segundo plano
+        await new Promise(r => setTimeout(r, 20));
+      }
+
+      // 3. Persistir no cache apenas ao final do loop
+      if (loadIdRef.current !== currentLoadId) return;
+      
+      const finalPages = await new Promise<PdfPage[]>(resolve => {
+        setPages(current => {
+          resolve(current);
+          return current;
         });
+      });
+
+      if (finalPages.length > 0) {
+        await pdfCacheService.save(item.id, finalPages, arrayBuffer);
+        console.debug('[PDF Cache] Saved!', item.id);
       }
     } else {
+      // Verificar se ainda somos o processo atual antes de adicionar a imagem
+      if (loadIdRef.current !== currentLoadId) return;
+
       setPages(prev => [...prev, {
         originalIndex: 0,
         thumbnail: url,
@@ -282,8 +322,21 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
       let w = 0, h = 0;
       if (page.sourceType === 'pdf') {
         let arrayBuffer: ArrayBuffer;
-        if (page.originalFile) arrayBuffer = await page.originalFile.arrayBuffer();
-        else arrayBuffer = await fetch(page.sourceUrl).then(res => res.arrayBuffer());
+        
+        // 1. Prioridade absoluta: Cache do banco de dados (IndexedDB)
+        // Isso garante que estamos usando a versão CORRETA e ATUALIZADA do PDF para este item
+        const cached = await pdfCacheService.get(item.id);
+        if (cached && cached.bytes) {
+          console.debug('[PDF Cache] loadHighRes hit!', item.id);
+          arrayBuffer = cached.bytes;
+        } else if (page.originalFile) {
+          console.debug('[PDF Cache] loadHighRes using originalFile', item.id);
+          arrayBuffer = await page.originalFile.arrayBuffer();
+        } else {
+          console.debug('[PDF Cache] loadHighRes fetching from URL', page.sourceUrl);
+          arrayBuffer = await fetch(page.sourceUrl).then(res => res.arrayBuffer());
+        }
+
         const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         const pdfPage = await pdf.getPage(page.originalIndex + 1);
         const viewport = pdfPage.getViewport({ scale: 2.5 });
@@ -601,9 +654,23 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
       const pdfBytes = await newPdf.save();
       const blob = new Blob([pdfBytes], { type: 'application/pdf' });
       const newUrl = URL.createObjectURL(blob);
-      
-      // Atualizar cache com as páginas atuais (com edições)
-      await pdfCacheService.save(item.id, pages);
+
+      // Atualizar as referências das páginas para o NOVO arquivo gerado
+      // IMPORTANTE: Removemos 'originalFile' para forçar o uso do novo binário gerado (ou cache)
+      const updatedPages: PdfPage[] = pages.map((p, idx) => {
+        const { originalFile, ...rest } = p;
+        return {
+          ...rest,
+          sourceUrl: newUrl,
+          originalIndex: idx,
+          isModified: false,
+          sourceType: 'pdf' as const
+        };
+      });
+
+      // Atualizar cache com as novas páginas e novo PDF
+      await pdfCacheService.save(item.id, updatedPages, pdfBytes);
+      console.debug('[PDF Cache] Updated after save', item.id);
       
       onUpdate({ ...item, url: newUrl });
       onClose();
@@ -691,6 +758,23 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
         const url = URL.createObjectURL(blob);
 
         const newItemId = Math.random().toString(36).substr(2, 9);
+
+        // Otimalização: Pré-salvar no cache as páginas do novo segmento para abertura instantânea
+        // ESSENCIAL: Atualizar sourceUrl e originalIndex para o novo arquivo e REMOVER originalFile
+        const segmentPages = indices.map((idx, newIdx) => {
+          const { originalFile, ...rest } = pages[idx];
+          return {
+            ...rest,
+            sourceUrl: url, 
+            originalIndex: newIdx, 
+            isModified: false,
+            id: Math.random().toString(36).substr(2, 9),
+          };
+        });
+        
+        await pdfCacheService.save(newItemId, segmentPages, pdfBytes);
+        console.debug('[PDF Cache] Pre-cached segment', newItemId);
+
         const newItem = {
           id: newItemId,
           url,
@@ -699,15 +783,6 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
           type: 'pdf' as const,
           selected: true
         };
-
-        // Otimalização: Pré-salvar no cache as páginas do novo segmento para abertura instantânea
-        const segmentPages = indices.map((idx, newIdx) => ({
-          ...pages[idx],
-          originalIndex: newIdx, // No novo arquivo, o índice muda
-          id: Math.random().toString(36).substr(2, 9),
-        }));
-        await pdfCacheService.save(newItemId, segmentPages, pdfBytes);
-
         newItems.push(newItem);
       }
 
@@ -1015,7 +1090,12 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
                         if(e.target.files) {
                           for(let i=0; i<e.target.files.length; i++) {
                             const file = e.target.files[i];
-                            processFile(URL.createObjectURL(file), file.type === 'application/pdf' ? 'pdf' : 'image', file);
+                             processFile(
+                               URL.createObjectURL(file), 
+                               file.type === 'application/pdf' ? 'pdf' : 'image', 
+                               file,
+                               loadIdRef.current
+                             );
                           }
                         }
                       }}/>

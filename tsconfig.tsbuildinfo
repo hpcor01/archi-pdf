@@ -1,0 +1,1 @@
+{"root":["./constants.ts","./types.ts","./vite.config.ts","./services/cvservice.ts","./services/pdfcacheservice.ts","./services/pdfservice.ts","./app.tsx","./index.tsx","./components/documentcolumn.tsx","./components/editormodal.tsx","./components/pdfeditormodal.tsx","./components/toast.tsx","./components/topbar.tsx","./components/updatenotification.tsx"],"version":"5.9.3"}
