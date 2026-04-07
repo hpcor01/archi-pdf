@@ -21,6 +21,7 @@ const App = () => {
   ]);
   const [editingItem, setEditingItem] = useState<{ docId: string, item: ImageItem } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveProgress, setSaveProgress] = useState<{ current: number, total: number } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [language, setLanguage] = useState<Language>('pt-BR');
   const [showCompressionHighlight, setShowCompressionHighlight] = useState(false);
@@ -360,14 +361,23 @@ const App = () => {
     const docsToSave = documents.filter(doc => doc.selected);
     if (docsToSave.length === 0) return;
     setIsSaving(true);
+    setSaveProgress({ current: 0, total: 0 });
     try {
-      await generatePDF(docsToSave, t, settings.useOCR, settings.compressPdf);
+      await generatePDF(
+        docsToSave, 
+        t, 
+        settings.useOCR, 
+        settings.compressPdf,
+        settings.saveSeparately,
+        (current, total) => setSaveProgress({ current, total })
+      );
       setToast({ visible: true, message: t.docSaved, type: 'success' });
       setTimeout(() => handleClearAll(), 500);
     } catch (e) {
       setToast({ visible: true, message: t.docSaveError, type: 'error' });
     } finally {
       setIsSaving(false);
+      setSaveProgress(null);
     }
   };
 
@@ -399,6 +409,7 @@ const App = () => {
           showCompressionHighlight={showCompressionHighlight}
           onCloseHighlight={handleCloseCompressionHighlight}
           onShowToast={showToast}
+          saveProgress={saveProgress}
         />
         <main className="flex-1 overflow-hidden p-4 sm:p-6 flex flex-col">
           <div className="flex-1 w-full border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-3xl relative flex flex-col overflow-hidden transition-colors dark:bg-[#232B3A]">

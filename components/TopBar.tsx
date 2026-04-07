@@ -26,6 +26,7 @@ interface TopBarProps {
   showCompressionHighlight?: boolean;
   onCloseHighlight?: () => void;
   onShowToast?: (message: string, type: 'success' | 'error') => void;
+  saveProgress?: { current: number; total: number } | null;
 }
 
 const LANGUAGES: { code: Language; label: string }[] = [
@@ -57,7 +58,8 @@ const TopBar: React.FC<TopBarProps> = ({
   toggleTheme,
   showCompressionHighlight,
   onCloseHighlight,
-  onShowToast
+  onShowToast,
+  saveProgress
 }) => {
   const t = TRANSLATIONS[language];
   const [isLangOpen, setIsLangOpen] = useState(false);
@@ -276,7 +278,9 @@ const TopBar: React.FC<TopBarProps> = ({
           {isSaving ? (
              <div className="flex items-center">
                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-               {t.saving}
+               {saveProgress && saveProgress.total > 0 
+                 ? `${t.saving} ${saveProgress.current}/${saveProgress.total}`
+                 : t.saving}
              </div>
           ) : t.save}
         </button>

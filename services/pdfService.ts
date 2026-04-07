@@ -153,13 +153,49 @@ const downloadBlob = (data: Uint8Array, filename: string, mimeType: string) => {
   window.URL.revokeObjectURL(url);
 };
 
-export const generatePDF = async (groups: DocumentGroup[], t: any, useOCR: boolean = false, compressPdf: boolean = false): Promise<void> => {
+export const generatePDF = async (
+  groups: DocumentGroup[], 
+  t: any, 
+  useOCR: boolean = false, 
+  compressPdf: boolean = false,
+  saveSeparately: boolean = true,
+  onProgress?: (current: number, total: number) => void
+): Promise<void> => {
   if (!window.PDFLib) {
     alert(t.pdfLibLoadError || "PDF library not loaded.");
     return;
   }
 
   const { PDFDocument, StandardFonts, rgb } = window.PDFLib;
+  const JSZip = (window as any).JSZip;
+  const zip = !saveSeparately ? new JSZip() : null;
+
+  // Calculamos o total de páginas aproximado (para imagens é 1, para PDFs precisamos abrir)
+  // Como abrir todos os PDFs pode ser lento, vamos contar os itens e atualizar o total dinamicamente
+  // ou fazer uma contagem rápida se possível.
+  let totalPages = 0;
+  for (const group of groups) {
+    for (const item of group.items) {
+      if (item.type === 'image') {
+        totalPages += 1;
+      } else if (item.type === 'pdf') {
+        try {
+          const arrayBuffer = await fetch(item.url).then(res => res.arrayBuffer());
+          const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+          totalPages += pdf.numPages;
+        } catch (e) {
+          totalPages += 1; // Fallback
+        }
+      }
+    }
+  }
+
+  let currentPage = 0;
+  const reportProgress = () => {
+    if (onProgress) onProgress(currentPage, totalPages);
+  };
+
+  reportProgress();
 
   for (const group of groups) {
     if (group.items.length === 0) continue;
@@ -169,7 +205,6 @@ export const generatePDF = async (groups: DocumentGroup[], t: any, useOCR: boole
       const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
       let addedPageCount = 0;
 
-      // Limitamos concorrência para processamento de itens (imagens e PDFs de origem)
       const itemLimit = pLimit(2);
 
       const itemsProcessed = await Promise.all(group.items.map(item => itemLimit(async () => {
@@ -202,7 +237,6 @@ export const generatePDF = async (groups: DocumentGroup[], t: any, useOCR: boole
           }
         }
 
-        // Se OCR estiver ativo, processamos aqui em paralelo (dentro do limite de itens)
         if (useOCR && pages.length > 0) {
           await Promise.all(pages.map(async (page) => {
             try {
@@ -239,7 +273,6 @@ export const generatePDF = async (groups: DocumentGroup[], t: any, useOCR: boole
 
             for (const word of pageInfo.words) {
               const { x0, y0, x1, y1 } = word.bbox;
-              
               const pdfX = (x0 / naturalW) * width;
               const pdfY = height - ((y1 / naturalH) * height);
               const pdfW = ((x1 - x0) / naturalW) * width;
@@ -260,18 +293,30 @@ export const generatePDF = async (groups: DocumentGroup[], t: any, useOCR: boole
             }
           }
           addedPageCount++;
+          currentPage++;
+          reportProgress();
         }
       }
 
       if (addedPageCount === 0) continue;
 
-      // useObjectStreams: true compacta ainda mais o PDF agrupando metadados
       const pdfBytes = await pdfDoc.save({ useObjectStreams: true });
-      downloadBlob(pdfBytes, `${group.title}.pdf`, 'application/pdf');
+      
+      if (saveSeparately) {
+        downloadBlob(pdfBytes, `${group.title}.pdf`, 'application/pdf');
+      } else if (zip) {
+        zip.file(`${group.title}.pdf`, pdfBytes);
+      }
 
     } catch (err) {
       console.error("Error creating PDF for group " + group.title, err);
       alert(`${t.pdfLibLoadError || "Erro ao criar PDF"} ${group.title}.`);
     }
+  }
+
+  // Se não foi salvo separadamente, gera e baixa o ZIP
+  if (!saveSeparately && zip) {
+    const zipContent = await zip.generateAsync({ type: 'uint8array' });
+    downloadBlob(zipContent, `arquivos_compactados.zip`, 'application/zip');
   }
 };
