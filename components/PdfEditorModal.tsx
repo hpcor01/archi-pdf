@@ -373,7 +373,6 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
       if (historyIndex === -1) {
         setPageHistory([url]);
         setHistoryIndex(0);
-        await triggerDetection(url, w, h);
       }
     } catch (e) { console.error(e); }
   };
@@ -390,7 +389,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
     if (viewingPageIndex !== null) {
       setPageHistory([]);
       setHistoryIndex(-1);
-      setIsCropping(true);
+      setIsCropping(false);
       loadHighRes(viewingPageIndex);
     }
   }, [viewingPageIndex]);
@@ -1029,16 +1028,28 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
                     <button onClick={handleReset} className="p-3 text-gray-400 hover:text-red-400 hover:bg-white/5 rounded-lg transition" title={t.reset}><RefreshCcw size={18} /></button>
                   </div>
 
-                  <button
-                    onClick={handleConfirmEdit}
-                    disabled={!isCropping}
-                    className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition flex items-center space-x-2 shadow-lg ${isCropping ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}
-                  >
-                    <Check size={18} />
-                    <span>{t.confirm}</span>
-                  </button>
-
-                  {!isCropping && (
+                  {isCropping ? (
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={handleConfirmEdit}
+                        className="px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition flex items-center space-x-2 shadow-lg bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20"
+                      >
+                        <Check size={18} />
+                        <span>{t.confirm}</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setIsCropping(false);
+                          setPoints(null);
+                        }}
+                        className="p-2.5 text-gray-400 hover:text-white hover:bg-white/5 rounded-xl transition border border-white/10 px-4"
+                        title={t.cancel}
+                      >
+                        <X size={18} />
+                        <span className="text-[10px] font-bold uppercase ml-2">{t.cancel}</span>
+                      </button>
+                    </div>
+                  ) : (
                     <button onClick={handleRecrop} className="p-2 text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition flex items-center space-x-2 border border-emerald-500/20 px-4" title={t.recrop}>
                       <CropIcon size={18} />
                       <span className="text-[10px] font-bold uppercase">{t.recrop}</span>

@@ -170,23 +170,27 @@ export const generatePDF = async (
   const JSZip = (window as any).JSZip;
   const zip = !saveSeparately ? new JSZip() : null;
 
-  // Calculamos o total de páginas aproximado (para imagens é 1, para PDFs precisamos abrir)
-  // Como abrir todos os PDFs pode ser lento, vamos contar os itens e atualizar o total dinamicamente
-  // ou fazer uma contagem rápida se possível.
+  // Cache temporário de buffers para evitar fetches repetidos na mesma sessão de salvamento
+  const arrayBufferCache = new Map<string, ArrayBuffer>();
+  const getArrayBuffer = async (item: any): Promise<ArrayBuffer> => {
+    if (arrayBufferCache.has(item.url)) return arrayBufferCache.get(item.url)!;
+    
+    let buffer: ArrayBuffer;
+    const isEdited = item.url !== item.originalUrl;
+    if (item.originalFile && !isEdited) {
+      buffer = await item.originalFile.arrayBuffer();
+    } else {
+      buffer = await fetch(item.url).then(res => res.arrayBuffer());
+    }
+    arrayBufferCache.set(item.url, buffer);
+    return buffer;
+  };
+
+  // Otimização: Usamos o pageCount pré-calculado se disponível
   let totalPages = 0;
   for (const group of groups) {
     for (const item of group.items) {
-      if (item.type === 'image') {
-        totalPages += 1;
-      } else if (item.type === 'pdf') {
-        try {
-          const arrayBuffer = await fetch(item.url).then(res => res.arrayBuffer());
-          const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-          totalPages += pdf.numPages;
-        } catch (e) {
-          totalPages += 1; // Fallback
-        }
-      }
+      totalPages += item.pageCount || 1;
     }
   }
 
@@ -205,9 +209,38 @@ export const generatePDF = async (
       const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
       let addedPageCount = 0;
 
-      const itemLimit = pLimit(2);
+      // Cache de documentos PDFLib carregados (para evitar re-carregar o mesmo PDF várias vezes no mesmo grupo)
+      const pdfLibDocCache = new Map<string, any>();
 
-      const itemsProcessed = await Promise.all(group.items.map(item => itemLimit(async () => {
+      for (const item of group.items) {
+        // --- FAST PATH: Cópia Direta de Páginas de PDF ---
+        // Só usamos se o usuário NÃO pediu compressão nem OCR
+        if (item.type === 'pdf' && !compressPdf && !useOCR) {
+          try {
+            const buffer = await getArrayBuffer(item);
+            let sourcePdf;
+            if (pdfLibDocCache.has(item.url)) {
+              sourcePdf = pdfLibDocCache.get(item.url);
+            } else {
+              sourcePdf = await PDFDocument.load(buffer);
+              pdfLibDocCache.set(item.url, sourcePdf);
+            }
+
+            const indices = Array.from({ length: sourcePdf.getPageCount() }, (_, i) => i);
+            const copiedPages = await pdfDoc.copyPages(sourcePdf, indices);
+            copiedPages.forEach((page: any) => pdfDoc.addPage(page));
+            
+            addedPageCount += indices.length;
+            currentPage += indices.length;
+            reportProgress();
+            continue; // Pula para o próximo item
+          } catch (err) {
+            console.error("Fast Path failed, falling back to rasterization", err);
+          }
+        }
+
+        // --- STANDARD PATH: Rasterização (PDF -> Imagem -> PDF) ---
+        // Necessário quando compressPdf=true ou useOCR=true
         let pages: { 
           data: Uint8Array, 
           base64: string, 
@@ -217,14 +250,8 @@ export const generatePDF = async (
 
         if (item.type === 'pdf') {
           try {
-            let arrayBuffer;
-            const isEdited = item.url !== item.originalUrl;
-            if (item.originalFile && !isEdited) {
-              arrayBuffer = await item.originalFile.arrayBuffer();
-            } else {
-              arrayBuffer = await fetch(item.url).then(res => res.arrayBuffer());
-            }
-            pages = await renderPdfToImages(arrayBuffer, t, compressPdf);
+            const buffer = await getArrayBuffer(item);
+            pages = await renderPdfToImages(buffer, t, compressPdf);
           } catch (error) {
             console.error(`Error processing PDF ${item.name}:`, error);
           }
@@ -238,9 +265,11 @@ export const generatePDF = async (
         }
 
         if (useOCR && pages.length > 0) {
+          // Processamos OCR com limite de concorrência para não travar
+          const ocrLimit = pLimit(2);
           await Promise.all(pages.map(async (page) => {
             try {
-              page.words = await performOCR(page.base64);
+              page.words = await ocrLimit(() => performOCR(page.base64));
             } catch (err) {
               console.error("OCR failed for page", err);
               page.words = [];
@@ -248,11 +277,7 @@ export const generatePDF = async (
           }));
         }
 
-        return pages;
-      })));
-
-      for (const pagesToProcess of itemsProcessed) {
-        for (const pageInfo of pagesToProcess) {
+        for (const pageInfo of pages) {
           let image;
           if (pageInfo.format === 'jpg') {
             image = await pdfDoc.embedJpg(pageInfo.data);
@@ -265,6 +290,7 @@ export const generatePDF = async (
           page.drawImage(image, { x: 0, y: 0, width, height });
 
           if (useOCR && pageInfo.words) {
+            // Desenhar texto invisível para busca (OCR)
             const img = new Image();
             img.src = pageInfo.base64;
             await new Promise(r => img.onload = r);
@@ -288,7 +314,7 @@ export const generatePDF = async (
                   opacity: 0,
                 });
               } catch (fontErr) {
-                console.warn('Font loading failed, falling back to standard font:', fontErr);
+                console.warn('Font loading failed:', fontErr);
               }
             }
           }
@@ -314,7 +340,6 @@ export const generatePDF = async (
     }
   }
 
-  // Se não foi salvo separadamente, gera e baixa o ZIP
   if (!saveSeparately && zip) {
     const zipContent = await zip.generateAsync({ type: 'uint8array' });
     downloadBlob(zipContent, `arquivos_compactados.zip`, 'application/zip');

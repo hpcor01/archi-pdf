@@ -90,7 +90,8 @@ const App = () => {
             originalFile: file,
             name: file.name,
             type: 'image',
-            selected: false
+            selected: false,
+            pageCount: 1
           };
         });
 
@@ -203,6 +204,18 @@ const App = () => {
       const file = files[i];
       const url = URL.createObjectURL(file);
       const type = file.type === 'application/pdf' ? 'pdf' : 'image';
+      
+      let pageCount = 1;
+      if (type === 'pdf' && (window as any).pdfjsLib) {
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const pdf = await (window as any).pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+          pageCount = pdf.numPages;
+        } catch (e) {
+          console.error("Error getting page count", e);
+        }
+      }
+
       newItems.push({
         id: Math.random().toString(36).substr(2, 9),
         url,
@@ -210,7 +223,8 @@ const App = () => {
         originalFile: file,
         name: file.name,
         type,
-        selected: false
+        selected: false,
+        pageCount
       });
     }
     setDocuments(prev => prev.map(doc => 
