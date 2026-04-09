@@ -25,7 +25,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
   const [history, setHistory] = useState<string[]>([]);
   const [currentIndex, setCurrentIndex] = useState(-1);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [activeTool, setActiveTool] = useState<Tool>('crop'); 
+  const [activeTool, setActiveTool] = useState<Tool>('none'); 
   const [points, setPoints] = useState<Point[] | null>(null); 
   const [isDragging, setIsDragging] = useState(false);
   const [dragInfo, setDragInfo] = useState<{ index: number; type: 'corner' | 'edge' | 'center' } | null>(null);
@@ -68,7 +68,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
       setPoints(null);
       setIsDragging(false);
       setZoom(1);
-      setActiveTool('crop'); 
+      setActiveTool('none'); 
       setIsPanning(false);
       setBrightness(100);
       setContrast(100);
@@ -378,122 +378,134 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
         </div>
         <div className="flex-1 flex overflow-hidden">
           <div className="w-72 bg-gray-50 dark:bg-gray-850 p-6 border-r border-gray-200 dark:border-gray-800 flex flex-col z-20 overflow-y-auto">
-            <div className="space-y-4">
-              <div className={`border-2 rounded-xl p-4 transition-all ${activeTool === 'crop' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'bg-white dark:bg-gray-800 border-transparent'}`}>
-                   <button onClick={() => setActiveTool(activeTool === 'crop' ? 'none' : 'crop')} className="w-full flex items-center text-left">
-                     <CropIcon className={`mr-3 ${activeTool === 'crop' ? 'text-emerald-600' : 'text-gray-400'}`} size={20} />
-                     <span className={`font-bold text-sm ${activeTool === 'crop' ? 'text-emerald-900 dark:text-emerald-100' : 'text-gray-600 dark:text-gray-400'}`}>{t.manualCrop}</span>
-                   </button>
-                   {activeTool === 'crop' && (
-                      <div className="mt-4 animate-fade-in space-y-3">
-                        <p className="text-[11px] text-emerald-800/70 dark:text-emerald-200/50 italic leading-relaxed">{t.cropInstructions}</p>
-                        <button 
-                          onClick={handleApplyCropOnly}
-                          disabled={!points || isProcessing}
-                          className="w-full flex items-center justify-center space-x-2 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors shadow-sm disabled:opacity-50"
-                        >
-                          <Wand2 size={14} />
-                          <span>{t.applyCrop}</span>
-                        </button>
-                      </div>
-                   )}
-              </div>
-              <div className={`border-2 rounded-xl p-4 transition-all ${activeTool === 'adjust' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'bg-white dark:bg-gray-800 border-transparent'}`}>
-                   <button onClick={() => setActiveTool(activeTool === 'adjust' ? 'none' : 'adjust')} className="w-full flex items-center text-left">
-                     <Sliders className={`mr-3 ${activeTool === 'adjust' ? 'text-emerald-600' : 'text-gray-400'}`} size={20} />
-                     <span className={`font-bold text-sm ${activeTool === 'adjust' ? 'text-emerald-900 dark:text-emerald-100' : 'text-gray-600 dark:text-gray-400'}`}>{t.imageTools}</span>
-                   </button>
-                   {activeTool === 'adjust' && (
-                      <div className="mt-5 space-y-5 animate-fade-in">
-                        <div className="space-y-2">
-                          <div className="flex justify-between text-[10px] font-bold text-emerald-800 dark:text-emerald-200 uppercase"><span>{t.brightness}</span><span>{brightness}%</span></div>
-                          <input type="range" min="0" max="200" value={brightness} onChange={(e) => setBrightness(parseInt(e.target.value))} className="w-full accent-emerald-500 h-1.5 bg-emerald-200 dark:bg-emerald-900 rounded-lg appearance-none cursor-pointer" />
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex justify-between text-[10px] font-bold text-emerald-800 dark:text-emerald-200 uppercase"><span>{t.contrast}</span><span>{contrast}%</span></div>
-                          <input type="range" min="0" max="200" value={contrast} onChange={(e) => setContrast(parseInt(e.target.value))} className="w-full accent-emerald-500 h-1.5 bg-emerald-200 dark:bg-emerald-900 rounded-lg appearance-none cursor-pointer" />
-                        </div>
-                        <div className="flex space-x-2 pt-2 border-t border-emerald-100 dark:border-emerald-800">
-                          <button onClick={() => handleApplyRotation(-90)} className="flex-1 py-2 bg-white dark:bg-gray-700 border border-emerald-200 dark:border-emerald-800 rounded-lg hover:bg-emerald-100 transition shadow-sm text-emerald-600"><RotateCcw size={16} className="mx-auto" /></button>
-                          <button onClick={() => handleApplyRotation(90)} className="flex-1 py-2 bg-white dark:bg-gray-700 border border-emerald-200 dark:border-emerald-800 rounded-lg hover:bg-emerald-100 transition shadow-sm text-emerald-600"><RotateCw size={16} className="mx-auto" /></button>
-                        </div>
-                      </div>
-                   )}
+            <div className="space-y-8">
+              {/* Seção: Recorte */}
+              <div>
+                <div className="flex items-center mb-3">
+                  <CropIcon className="mr-2 text-emerald-500" size={18} />
+                  <span className="font-bold text-xs uppercase tracking-wider text-gray-700 dark:text-gray-300">{t.manualCrop}</span>
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700 shadow-sm space-y-3">
+                  <button 
+                    onClick={() => setActiveTool(activeTool === 'crop' ? 'none' : 'crop')} 
+                    className={`w-full py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTool === 'crop' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-650'}`}
+                  >
+                    {activeTool === 'crop' ? t.cancel : t.manualCrop}
+                  </button>
+                  
+                  {activeTool === 'crop' && (
+                    <div className="animate-fade-in space-y-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                      <p className="text-[10px] text-gray-500 dark:text-gray-400 italic leading-relaxed">{t.cropInstructions}</p>
+                      <button 
+                        onClick={handleApplyCropOnly}
+                        disabled={!points || isProcessing}
+                        className="w-full flex items-center justify-center space-x-2 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors shadow-sm disabled:opacity-50"
+                      >
+                        <Wand2 size={14} />
+                        <span>{t.applyCrop}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div className={`border-2 rounded-xl p-4 transition-all ${activeTool === 'text' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'bg-white dark:bg-gray-800 border-transparent'}`}>
-                   <button onClick={() => setActiveTool(activeTool === 'text' ? 'none' : 'text')} className="w-full flex items-center text-left">
-                     <TypeIcon className={`mr-3 ${activeTool === 'text' ? 'text-emerald-600' : 'text-gray-400'}`} size={20} />
-                     <span className={`font-bold text-sm ${activeTool === 'text' ? 'text-emerald-900 dark:text-emerald-100' : 'text-gray-600 dark:text-gray-400'}`}>{t.addText}</span>
-                   </button>
-                   {activeTool === 'text' && (
-                      <div className="mt-4 animate-fade-in space-y-4">
-                        <button 
-                          onClick={handleAddText}
-                          className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold transition-colors"
-                        >
-                          {t.addText}
-                        </button>
+              {/* Seção: Ajustes */}
+              <div>
+                <div className="flex items-center mb-3">
+                  <Sliders className="mr-2 text-emerald-500" size={18} />
+                  <span className="font-bold text-xs uppercase tracking-wider text-gray-700 dark:text-gray-300">{t.imageTools}</span>
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700 shadow-sm space-y-5">
+                  <div className="space-y-3">
+                    <div className="flex justify-between text-[10px] font-bold text-gray-500 uppercase"><span>{t.brightness}</span><span>{brightness}%</span></div>
+                    <input type="range" min="0" max="200" value={brightness} onChange={(e) => setBrightness(parseInt(e.target.value))} className="w-full accent-emerald-500 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer" />
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex justify-between text-[10px] font-bold text-gray-500 uppercase"><span>{t.contrast}</span><span>{contrast}%</span></div>
+                    <input type="range" min="0" max="200" value={contrast} onChange={(e) => setContrast(parseInt(e.target.value))} className="w-full accent-emerald-500 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer" />
+                  </div>
+                  <div className="flex space-x-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+                    <button onClick={() => handleApplyRotation(-90)} className="flex-1 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition shadow-sm text-gray-600 dark:text-gray-300"><RotateCcw size={16} className="mx-auto" /></button>
+                    <button onClick={() => handleApplyRotation(90)} className="flex-1 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition shadow-sm text-gray-600 dark:text-gray-300"><RotateCw size={16} className="mx-auto" /></button>
+                  </div>
+                </div>
+              </div>
 
-                        {selectedTextId && (
-                          <div className="space-y-3 pt-3 border-t border-emerald-100 dark:border-emerald-800">
-                            <input 
-                              type="text" 
-                              value={textElements.find(te => te.id === selectedTextId)?.text || ''}
-                              onChange={(e) => handleUpdateText(selectedTextId, { text: e.target.value })}
-                              className="w-full p-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
-                              placeholder={t.textPlaceholder}
-                            />
-                            
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className="space-y-1">
-                                <label className="text-[10px] font-bold text-gray-400 uppercase">{t.font}</label>
-                                <select 
-                                  value={textElements.find(te => te.id === selectedTextId)?.fontFamily || 'sans-serif'}
-                                  onChange={(e) => handleUpdateText(selectedTextId, { fontFamily: e.target.value })}
-                                  className="w-full p-1 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg"
-                                >
-                                  <option value="sans-serif">Sans</option>
-                                  <option value="serif">Serif</option>
-                                  <option value="monospace">Mono</option>
-                                  <option value="cursive">Cursive</option>
-                                </select>
-                              </div>
-                              <div className="space-y-1">
-                                <label className="text-[10px] font-bold text-gray-400 uppercase">{t.size}</label>
-                                <input 
-                                  type="number" 
-                                  value={textElements.find(te => te.id === selectedTextId)?.fontSize || 48}
-                                  onChange={(e) => handleUpdateText(selectedTextId, { fontSize: parseInt(e.target.value) })}
-                                  className="w-full p-1 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg"
-                                />
-                              </div>
-                            </div>
+              {/* Seção: Texto */}
+              <div>
+                <div className="flex items-center mb-3">
+                  <TypeIcon className="mr-2 text-emerald-500" size={18} />
+                  <span className="font-bold text-xs uppercase tracking-wider text-gray-700 dark:text-gray-300">{t.addText}</span>
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700 shadow-sm space-y-4">
+                  <button 
+                    onClick={handleAddText}
+                    className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-500/10 transition-all active:scale-95"
+                  >
+                    {t.addText}
+                  </button>
 
-                            <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-gray-400 uppercase">{t.color}</label>
-                              <div className="flex items-center space-x-2">
-                                <input 
-                                  type="color" 
-                                  value={textElements.find(te => te.id === selectedTextId)?.color || '#000000'}
-                                  onChange={(e) => handleUpdateText(selectedTextId, { color: e.target.value })}
-                                  className="w-8 h-8 rounded cursor-pointer bg-transparent border-none"
-                                />
-                                <span className="text-xs font-mono text-gray-500">{textElements.find(te => te.id === selectedTextId)?.color}</span>
-                              </div>
-                            </div>
-
-                            <button 
-                              onClick={() => handleRemoveText(selectedTextId)}
-                              className="w-full py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-xs font-bold transition-colors flex items-center justify-center"
-                            >
-                              <Trash2 size={14} className="mr-2" />
-                              {t.removeText}
-                            </button>
-                          </div>
-                        )}
+                  {selectedTextId && (
+                    <div className="space-y-4 pt-4 border-t border-gray-100 dark:border-gray-700 animate-fade-in">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">{t.textPlaceholder}</label>
+                        <input 
+                          type="text" 
+                          value={textElements.find(te => te.id === selectedTextId)?.text || ''}
+                          onChange={(e) => handleUpdateText(selectedTextId, { text: e.target.value })}
+                          className="w-full p-2.5 text-xs bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none text-gray-700 dark:text-gray-300"
+                          placeholder={t.textPlaceholder}
+                        />
                       </div>
-                   )}
+                      
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">{t.font}</label>
+                          <select 
+                            value={textElements.find(te => te.id === selectedTextId)?.fontFamily || 'sans-serif'}
+                            onChange={(e) => handleUpdateText(selectedTextId, { fontFamily: e.target.value })}
+                            className="w-full p-2 text-[11px] bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-700 dark:text-gray-300"
+                          >
+                            <option value="sans-serif">Sans</option>
+                            <option value="serif">Serif</option>
+                            <option value="monospace">Mono</option>
+                            <option value="cursive">Cursive</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">{t.size}</label>
+                          <input 
+                            type="number" 
+                            value={textElements.find(te => te.id === selectedTextId)?.fontSize || 48}
+                            onChange={(e) => handleUpdateText(selectedTextId, { fontSize: parseInt(e.target.value) })}
+                            className="w-full p-2 text-[11px] bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-700 dark:text-gray-300"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between p-2.5 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
+                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">{t.color}</label>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-[10px] font-mono text-gray-500 uppercase">{textElements.find(te => te.id === selectedTextId)?.color}</span>
+                          <input 
+                            type="color" 
+                            value={textElements.find(te => te.id === selectedTextId)?.color || '#000000'}
+                            onChange={(e) => handleUpdateText(selectedTextId, { color: e.target.value })}
+                            className="w-6 h-6 rounded cursor-pointer bg-transparent border-none p-0"
+                          />
+                        </div>
+                      </div>
+
+                      <button 
+                        onClick={() => handleRemoveText(selectedTextId)}
+                        className="w-full py-2.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors flex items-center justify-center border border-red-100 dark:border-red-900/30"
+                      >
+                        <Trash2 size={14} className="mr-2" />
+                        {t.removeText}
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
             <div className="mt-auto pt-6 border-t border-gray-200 dark:border-gray-800">
