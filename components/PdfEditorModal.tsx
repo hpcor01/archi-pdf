@@ -53,6 +53,7 @@ export interface PdfPage {
   isModified: boolean;
   width?: number;
   height?: number;
+  thumbnailBlob?: Blob; // Armazenar o binário real para o cache
 }
 
 interface Point {
@@ -156,6 +157,12 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
   const loadIdRef = useRef(0);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const pagesRef = useRef<PdfPage[]>([]);
+
+  // Sincronizar o ref com o estado para o cleanup final
+  useEffect(() => {
+    pagesRef.current = pages;
+  }, [pages]);
   const imageRef = useRef<HTMLImageElement>(null);
   const panStartRef = useRef<Point>({ x: 0, y: 0 });
   const scrollStartRef = useRef<{ left: number, top: number }>({ left: 0, top: 0 });
@@ -180,6 +187,18 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  // OTIMIZAÇÃO: Cleanup de Object URLs apenas quando o componente desmonta (fecha o modal)
+  // Isso evita que as miniaturas "quebrem" quando o estado de páginas muda (ex: marcar como modificada)
+  useEffect(() => {
+    return () => {
+      pagesRef.current.forEach(page => {
+        if (page.thumbnail.startsWith('blob:')) {
+          URL.revokeObjectURL(page.thumbnail);
+        }
+      });
     };
   }, []);
 
@@ -241,7 +260,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
       const loadingTask = window.pdfjsLib.getDocument({ data: arrayBuffer.slice(0) });
       const pdf = await loadingTask.promise;
 
-      const CHUNK_SIZE = 3;
+      const CHUNK_SIZE = 5; // Aumentado de 3 para 5 (Blobs são mais leves)
       for (let chunkStart = 1; chunkStart <= pdf.numPages; chunkStart += CHUNK_SIZE) {
         const chunkEnd = Math.min(chunkStart + CHUNK_SIZE - 1, pdf.numPages);
         const chunkIndices = Array.from({ length: chunkEnd - chunkStart + 1 }, (_, i) => chunkStart + i);
@@ -249,25 +268,41 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
         const chunkPages = await Promise.all(
           chunkIndices.map(async (i) => {
             const page = await pdf.getPage(i);
-            // Otimalização: Reduzindo scale de 1.0 para 0.4 para thumbnails
-            // Isso acelera o processamento inicial em ~80%
             const viewport = page.getViewport({ scale: 0.4 });
-            const canvas = document.createElement('canvas');
+            
+            // OTIMIZAÇÃO: Usar OffscreenCanvas se disponível para evitar bloqueio da thread principal
+            let canvas: HTMLCanvasElement | OffscreenCanvas;
+            if (typeof OffscreenCanvas !== 'undefined') {
+              canvas = new OffscreenCanvas(viewport.width, viewport.height);
+            } else {
+              canvas = document.createElement('canvas');
+              canvas.width = viewport.width;
+              canvas.height = viewport.height;
+            }
+            
             const context = canvas.getContext('2d');
-            canvas.height = viewport.height;
-            canvas.width = viewport.width;
             if (context) {
-              await page.render({ canvasContext: context, viewport }).promise;
+              await page.render({ canvasContext: context as any, viewport }).promise;
+              
+              let blob: Blob;
+              if (typeof OffscreenCanvas !== 'undefined' && canvas instanceof OffscreenCanvas) {
+                blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.6 });
+              } else {
+                blob = await new Promise<Blob>((resolve) => (canvas as HTMLCanvasElement).toBlob(blob => resolve(blob!), 'image/jpeg', 0.6));
+              }
+
+              const thumbnailUrl = URL.createObjectURL(blob);
+
               return {
                 originalIndex: i - 1,
-                // Otimalização: Qualidade 0.6 para thumbnails menores e mais rápidos
-                thumbnail: canvas.toDataURL('image/jpeg', 0.6),
+                thumbnail: thumbnailUrl,
+                thumbnailBlob: blob,
                 id: Math.random().toString(36).substr(2, 9),
                 sourceUrl: url,
                 sourceType: 'pdf' as const,
                 originalFile: file,
                 isModified: false,
-                width: viewport.width / 0.4, // Dimensão em escala 1.0
+                width: viewport.width / 0.4,
                 height: viewport.height / 0.4,
               };
             }
@@ -276,29 +311,21 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
         );
 
         // Verificar se ainda somos o processo atual antes de atualizar estado
-        if (loadIdRef.current !== currentLoadId) {
-          console.debug('[PDF Render] Process aborted (currentLoadId mismatch)', item.id);
-          return;
-        }
+        if (loadIdRef.current !== currentLoadId) return;
 
         const validPages = chunkPages.filter(Boolean) as PdfPage[];
         
         // Atualizar estado progressivamente
         setPages(prev => {
           const newPages = [...prev, ...validPages];
-          
-          // SALVAMENTO INCREMENTAL: Salvar no cache conforme processa
-          // Isso garante que se o usuário fechar o modal no meio, o progresso é mantido
           if (newPages.length > 0) {
             pdfCacheService.save(item.id, newPages, arrayBuffer);
           }
-          
           return newPages;
         });
 
-        // "Respiro" para o navegador não travar e continuar em segundo plano
-        // Reduzido para 10ms para ser mais agressivo no processamento
-        await new Promise(r => setTimeout(r, 10));
+        // "Respiro" mínimo de 5ms apenas para manter o loop de eventos livre
+        await new Promise(r => setTimeout(r, 5));
       }
 
       // 3. Persistir no cache final (redundante mas seguro para garantir integridade)
