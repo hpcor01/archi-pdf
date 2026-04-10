@@ -11,6 +11,7 @@ export interface ImageItem {
   selected: boolean;
   processing?: boolean; // True if AI is working on it
   backupUrl?: string; // URL da última operação (para desfazer lote)
+  pageCount?: number; // Pre-calculated page count for PDFs
 }
 
 export interface DocumentGroup {
