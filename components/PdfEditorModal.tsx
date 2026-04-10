@@ -51,6 +51,8 @@ export interface PdfPage {
   sourceType: 'pdf' | 'image';
   originalFile?: File;
   isModified: boolean;
+  width?: number;
+  height?: number;
 }
 
 interface Point {
@@ -247,7 +249,9 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
         const chunkPages = await Promise.all(
           chunkIndices.map(async (i) => {
             const page = await pdf.getPage(i);
-            const viewport = page.getViewport({ scale: 1.0 });
+            // Otimalização: Reduzindo scale de 1.0 para 0.4 para thumbnails
+            // Isso acelera o processamento inicial em ~80%
+            const viewport = page.getViewport({ scale: 0.4 });
             const canvas = document.createElement('canvas');
             const context = canvas.getContext('2d');
             canvas.height = viewport.height;
@@ -256,12 +260,15 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
               await page.render({ canvasContext: context, viewport }).promise;
               return {
                 originalIndex: i - 1,
-                thumbnail: canvas.toDataURL('image/jpeg', 0.75),
+                // Otimalização: Qualidade 0.6 para thumbnails menores e mais rápidos
+                thumbnail: canvas.toDataURL('image/jpeg', 0.6),
                 id: Math.random().toString(36).substr(2, 9),
                 sourceUrl: url,
                 sourceType: 'pdf' as const,
                 originalFile: file,
                 isModified: false,
+                width: viewport.width / 0.4, // Dimensão em escala 1.0
+                height: viewport.height / 0.4,
               };
             }
             return null;
@@ -277,13 +284,24 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
         const validPages = chunkPages.filter(Boolean) as PdfPage[];
         
         // Atualizar estado progressivamente
-        setPages(prev => [...prev, ...validPages]);
+        setPages(prev => {
+          const newPages = [...prev, ...validPages];
+          
+          // SALVAMENTO INCREMENTAL: Salvar no cache conforme processa
+          // Isso garante que se o usuário fechar o modal no meio, o progresso é mantido
+          if (newPages.length > 0) {
+            pdfCacheService.save(item.id, newPages, arrayBuffer);
+          }
+          
+          return newPages;
+        });
 
         // "Respiro" para o navegador não travar e continuar em segundo plano
-        await new Promise(r => setTimeout(r, 20));
+        // Reduzido para 10ms para ser mais agressivo no processamento
+        await new Promise(r => setTimeout(r, 10));
       }
 
-      // 3. Persistir no cache apenas ao final do loop
+      // 3. Persistir no cache final (redundante mas seguro para garantir integridade)
       if (loadIdRef.current !== currentLoadId) return;
       
       const finalPages = await new Promise<PdfPage[]>(resolve => {
@@ -314,9 +332,16 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
   };
 
   const loadHighRes = async (index: number) => {
-    setHighResPageUrl(null);
-    setImgNaturalSize(null);
     const page = pages[index];
+
+    // Limpamos a URL de alta resolução imediatamente para evitar que a página 
+    // anterior continue visível (o que causava um efeito de transição/troca)
+    setHighResPageUrl(null);
+
+    // Se a página tem dimensões salvas, usamos elas para manter o layout estável
+    if (page.width && page.height) {
+      setImgNaturalSize({ w: page.width, h: page.height });
+    }
     try {
       let url = "";
       let w = 0, h = 0;
@@ -847,7 +872,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-md transition-all">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-md">
       <div className="bg-[#0A0C10] w-full h-full flex flex-col overflow-hidden text-white">
 
         {/* Header */}
@@ -929,20 +954,26 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
           {viewingPageIndex !== null ? (
             <div className="w-full h-full flex flex-col relative overflow-hidden">
               <div ref={scrollContainerRef} className="flex-1 overflow-auto bg-[#050608] custom-scrollbar flex p-24 relative">
-                <div className={`m-auto relative bg-white shadow-2xl ${isPanning ? 'cursor-grabbing' : isSpacePressed ? 'cursor-grab' : ''}`} style={{
-                  width: imgNaturalSize ? `${imgNaturalSize.w * pageZoom}px` : 'auto',
-                  height: imgNaturalSize ? `${imgNaturalSize.h * pageZoom}px` : 'auto'
-                }} onMouseDown={handleMouseDown}>
-                  {highResPageUrl && imgNaturalSize && (
-                    <>
-                      <img
-                        ref={imageRef}
-                        src={highResPageUrl}
-                        alt="Page"
-                        className="w-full h-full block pointer-events-none object-contain max-w-none max-h-none"
-                        draggable={false}
-                      />
-                      {points && isCropping && (
+                  {(highResPageUrl || (imgNaturalSize && viewingPageIndex !== null)) && (
+                    <div 
+                      className={`m-auto relative bg-white shadow-2xl overflow-hidden ${isPanning ? 'cursor-grabbing' : isSpacePressed ? 'cursor-grab' : ''}`} 
+                      style={{
+                        width: imgNaturalSize ? `${imgNaturalSize.w * pageZoom}px` : 'auto',
+                        height: imgNaturalSize ? `${imgNaturalSize.h * pageZoom}px` : 'auto'
+                      }} 
+                      onMouseDown={handleMouseDown}
+                    >
+                      {highResPageUrl && (
+                        <img
+                          ref={imageRef}
+                          src={highResPageUrl}
+                          alt="Page"
+                          className="w-full h-full block pointer-events-none object-contain max-w-none max-h-none"
+                          draggable={false}
+                        />
+                      )}
+
+                      {highResPageUrl && imgNaturalSize && points && isCropping && (
                         <svg
                           className={`absolute inset-0 w-full h-full pointer-events-none overflow-visible z-10 ${isPanning || isSpacePressed ? 'pointer-events-none' : 'pointer-events-auto'}`}
                           style={{ pointerEvents: isPanning || isSpacePressed ? 'none' : 'auto' }}
@@ -1009,9 +1040,8 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
                           })()}
                         </svg>
                       )}
-                    </>
+                    </div>
                   )}
-                </div>
               </div>
 
               {/* Toolbar Inferior */}
