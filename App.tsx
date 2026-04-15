@@ -491,7 +491,7 @@ const App = () => {
              <div className="flex items-center justify-center space-x-2">
                <span>Αρχή PDF© {new Date().getFullYear()} - {t.rightsReserved}.</span>
                <span>|</span>
-               <a target="_blank" rel="noopener noreferrer" href="https://app.pipefy.com/public/form/d_5r27Kf" className="hover:text-emerald-500 transition">{t.supportLink}</a>
+               <a target="_blank" rel="noopener noreferrer" href="https://home-desk.vercel.app/abrir-chamado?origin=archi-pdf" className="hover:text-emerald-500 transition">{t.supportLink}</a>
                <span>|</span>
                <button onClick={() => { setShowAboutInfo(true); setShowVersionInfo(false); setShowManual(false); }} className="hover:text-emerald-500 transition font-medium underline decoration-dotted underline-offset-2">
                  {t.about}
