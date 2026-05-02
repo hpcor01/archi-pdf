@@ -271,6 +271,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
       
       // Reiniciar ferramentas para o novo estado da imagem
       setPoints(null);
+      setActiveTool('none'); // Torna a ferramenta de recorte invisível após aplicar
       await handlePerformAutoDetection(croppedUrl);
     } catch (err) {
       alert(t.applyCropError);

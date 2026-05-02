@@ -386,7 +386,16 @@ const App = () => {
         (current, total) => setSaveProgress({ current, total })
       );
       setToast({ visible: true, message: t.docSaved, type: 'success' });
-      setTimeout(() => handleClearAll(), 500);
+      setTimeout(() => {
+        setDocuments(prevDocs => {
+          const remainingDocs = prevDocs.filter(doc => !doc.selected);
+          if (remainingDocs.length === 0) {
+            return [{ id: Date.now().toString(), title: 'PDF 1', items: [], selected: true }];
+          }
+          return remainingDocs;
+        });
+        setBatchHistory(null);
+      }, 500);
     } catch (e) {
       setToast({ visible: true, message: t.docSaveError, type: 'error' });
     } finally {
