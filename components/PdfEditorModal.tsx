@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Save, Trash2, ArrowLeft, ArrowRight, ZoomIn, ZoomOut, Search, Grid, Plus, RotateCcw, RotateCw, Undo2, RefreshCcw, Check, Crop as CropIcon, Sparkles, GripVertical } from 'lucide-react';
+import { X, Save, Trash2, ArrowLeft, ArrowRight, ZoomIn, ZoomOut, Search, Grid, Plus, RotateCcw, RotateCw, Undo2, RefreshCcw, Check, Crop as CropIcon, Sparkles, GripVertical, Scissors } from 'lucide-react';
 import { ImageItem, Language, AppSettings } from '../types';
 import { TRANSLATIONS } from '../constants';
 import { detectDocumentCorners, applyPerspectiveCrop, applyImageAdjustments } from '../services/cvService';
@@ -178,6 +178,29 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space') setIsSpacePressed(true);
+      
+      if (!isOpen) return;
+
+      if (viewingPageIndex !== null && !isCropping) {
+        if (e.key === 'ArrowLeft' && viewingPageIndex > 0) {
+          setViewingPageIndex(v => v! - 1);
+        } else if (e.key === 'ArrowRight' && viewingPageIndex < pages.length - 1) {
+          setViewingPageIndex(v => v! + 1);
+        }
+      }
+
+      if (e.key === 'Escape') {
+        if (viewingPageIndex !== null) {
+          if (isCropping) {
+            setIsCropping(false);
+            setPoints(null);
+          } else {
+            setViewingPageIndex(null);
+          }
+        } else {
+          onClose();
+        }
+      }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
       if (e.code === 'Space') setIsSpacePressed(false);
@@ -188,7 +211,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [isOpen, viewingPageIndex, pages.length, isCropping, onClose]);
 
   // OTIMIZAÇÃO: Cleanup de Object URLs apenas quando o componente desmonta (fecha o modal)
   // Isso evita que as miniaturas "quebrem" quando o estado de páginas muda (ex: marcar como modificada)
@@ -1082,7 +1105,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
                     <button onClick={() => handleRotate('L')} className="p-3 text-gray-400 hover:text-emerald-400 hover:bg-white/5 rounded-lg transition" title={t.rotateLeft}><RotateCcw size={18} /></button>
                     <button onClick={() => handleRotate('R')} className="p-3 text-gray-400 hover:text-emerald-400 hover:bg-white/5 rounded-lg transition" title={t.rotateRight}><RotateCw size={18} /></button>
                     <button onClick={handleUndo} disabled={historyIndex <= 0} className="p-3 text-gray-400 hover:text-emerald-400 hover:bg-white/5 rounded-lg transition disabled:opacity-20" title={t.undo}><Undo2 size={18} /></button>
-                    <button onClick={handleReset} className="p-3 text-gray-400 hover:text-red-400 hover:bg-white/5 rounded-lg transition" title={t.reset}><RefreshCcw size={18} /></button>
+                    <button onClick={handleReset} className="p-3 text-gray-400 hover:text-red-400 hover:bg-white/5 rounded-lg transition" title={t.reset}><RotateCcw size={18} /></button>
                   </div>
 
                   {isCropping ? (
@@ -1196,7 +1219,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
                 onClick={() => setShowSplitDialog(true)}
                 className="bg-white/5 hover:bg-white/10 text-emerald-400 border border-emerald-500/20 px-6 py-2.5 rounded-xl font-black uppercase text-xs tracking-widest transition-all active:scale-95 flex items-center space-x-2"
               >
-                <RefreshCcw size={16} />
+                <Scissors size={16} />
                 <span>{t.splitPdf}</span>
               </button>
               <button onClick={handleSaveAll} className="bg-emerald-500 hover:bg-emerald-600 text-white px-10 py-2.5 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl shadow-emerald-500/20 transition-all active:scale-95">
@@ -1212,7 +1235,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowSplitDialog(false)} />
             <div className="bg-[#161B22] border border-white/10 p-8 rounded-3xl shadow-2xl w-full max-w-md relative z-10 animate-fade-in">
               <h3 className="text-xl font-black uppercase tracking-tight mb-2 flex items-center space-x-3">
-                <RefreshCcw className="text-emerald-500" />
+                <Scissors className="text-emerald-500" />
                 <span>{t.splitPdf}</span>
               </h3>
               <p className="text-sm text-gray-400 mb-6 font-medium leading-relaxed">

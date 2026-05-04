@@ -1,11 +1,11 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Check, RotateCcw, ZoomIn, ZoomOut, Search, Crop as CropIcon, Sliders, RotateCw, Maximize, Sparkles, Wand2, Type as TypeIcon, Trash2 } from 'lucide-react';
+import { X, Check, RotateCcw, ZoomIn, ZoomOut, Search, Crop as CropIcon, Sliders, RotateCw, Maximize, Sparkles, Wand2, Type as TypeIcon, Trash2, Highlighter, Eraser } from 'lucide-react';
 import { ImageItem, Language, TextElement } from '../types';
 import { detectDocumentCorners, applyPerspectiveCrop, applyImageAdjustments } from '../services/cvService';
 import { TRANSLATIONS } from '../constants';
 
-type Tool = 'none' | 'crop' | 'adjust' | 'text';
+type Tool = 'none' | 'crop' | 'adjust' | 'text' | 'highlight';
 
 interface Point {
   x: number;
@@ -38,6 +38,9 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
   const [isPanning, setIsPanning] = useState(false);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [imgLayoutSize, setImgLayoutSize] = useState<{ w: number, h: number } | null>(null);
+  const [grayscale, setGrayscale] = useState(false);
+  const [highlights, setHighlights] = useState<Point[][]>([]);
+  const [currentHighlight, setCurrentHighlight] = useState<Point[] | null>(null);
 
   const imageRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -49,6 +52,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space') setIsSpacePressed(true);
+      if (e.key === 'Escape') onClose();
     };
     const handleKeyUp = (e: KeyboardEvent) => {
       if (e.code === 'Space') setIsSpacePressed(false);
@@ -75,6 +79,9 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
       setTextElements([]);
       setSelectedTextId(null);
       setEditingTextId(null);
+      setGrayscale(false);
+      setHighlights([]);
+      setCurrentHighlight(null);
     }
   }, [item, isOpen]);
 
@@ -137,6 +144,15 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
         if (containerRef.current) scrollStartRef.current = { left: containerRef.current.scrollLeft, top: containerRef.current.scrollTop };
         return;
     }
+    if (activeTool === 'highlight') {
+      const imgRect = imageRef.current.getBoundingClientRect();
+      const scale = imageRef.current.naturalWidth / imgRect.width;
+      const x = (e.clientX - imgRect.left) * scale;
+      const y = (e.clientY - imgRect.top) * scale;
+      setCurrentHighlight([{ x, y }]);
+      return;
+    }
+
     if (activeTool === 'crop') {
       const imgRect = imageRef.current.getBoundingClientRect();
       const scale = imageRef.current.naturalWidth / imgRect.width;
@@ -194,6 +210,15 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
         containerRef.current.scrollTop = scrollStartRef.current.top - dy;
         return;
     }
+    if (activeTool === 'highlight' && currentHighlight && imageRef.current) {
+      const imgRect = imageRef.current.getBoundingClientRect();
+      const scale = imageRef.current.naturalWidth / imgRect.width;
+      const x = (e.clientX - imgRect.left) * scale;
+      const y = (e.clientY - imgRect.top) * scale;
+      setCurrentHighlight(prev => prev ? [...prev, { x, y }] : null);
+      return;
+    }
+
     if (!isDragging || !initialPointsRef.current || !dragInfo || !imageRef.current) return;
     
     const scale = dragScaleRef.current;
@@ -221,15 +246,19 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
       setMagnifierPoint(getCenterPoint(newPoints));
     }
     setPoints(newPoints);
-  }, [isDragging, dragInfo, isPanning]);
+  }, [isDragging, dragInfo, isPanning, activeTool, currentHighlight]);
 
   useEffect(() => {
-    if (isDragging || isPanning) {
+    if (isDragging || isPanning || currentHighlight) {
         window.addEventListener('mousemove', handleWindowMouseMove);
         const stopDrag = () => {
           setIsDragging(false);
           setIsPanning(false);
           setMagnifierPoint(null);
+          if (currentHighlight) {
+            setHighlights(prev => [...prev, currentHighlight]);
+            setCurrentHighlight(null);
+          }
         };
         window.addEventListener('mouseup', stopDrag);
         return () => {
@@ -237,7 +266,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
           window.removeEventListener('mouseup', stopDrag);
         };
     }
-  }, [isDragging, isPanning, handleWindowMouseMove]);
+  }, [isDragging, isPanning, handleWindowMouseMove, currentHighlight]);
 
   const handleApplyRotation = async (angle: number) => {
     if (isProcessing) return;
@@ -338,9 +367,28 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
       canvas.height = img.height;
       
       // Apply adjustments
-      ctx.filter = `brightness(${brightness}%) contrast(${contrast}%)`;
+      ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) ${grayscale ? 'grayscale(100%)' : ''}`;
       ctx.drawImage(img, 0, 0);
       ctx.filter = 'none';
+
+      // Draw highlights
+      if (highlights.length > 0) {
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = 'rgba(255, 215, 0, 0.4)'; // Amarelo marca-texto
+        const strokeWidth = Math.max(img.width * 0.02, 10);
+        ctx.lineWidth = strokeWidth;
+
+        highlights.forEach(path => {
+          if (path.length < 2) return;
+          ctx.beginPath();
+          ctx.moveTo(path[0].x, path[0].y);
+          for (let i = 1; i < path.length; i++) {
+            ctx.lineTo(path[i].x, path[i].y);
+          }
+          ctx.stroke();
+        });
+      }
 
       // Draw text elements
       textElements.forEach(te => {
@@ -425,10 +473,46 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                     <div className="flex justify-between text-[10px] font-bold text-gray-500 uppercase"><span>{t.contrast}</span><span>{contrast}%</span></div>
                     <input type="range" min="0" max="200" value={contrast} onChange={(e) => setContrast(parseInt(e.target.value))} className="w-full accent-emerald-500 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer" />
                   </div>
+                  <label 
+                    onClick={() => setGrayscale(!grayscale)}
+                    className="flex items-center space-x-2 cursor-pointer group"
+                  >
+                    <div className={`w-10 h-5 flex items-center rounded-full p-1 transition-colors ${grayscale ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'}`}>
+                      <div className={`bg-white w-3 h-3 rounded-full shadow-md transform transition-transform ${grayscale ? 'translate-x-5' : ''}`} />
+                    </div>
+                    <span className="text-[10px] font-bold text-gray-500 uppercase group-hover:text-emerald-500 transition-colors">
+                      {t.grayscale}
+                    </span>
+                  </label>
                   <div className="flex space-x-2 pt-2 border-t border-gray-100 dark:border-gray-700">
                     <button onClick={() => handleApplyRotation(-90)} className="flex-1 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition shadow-sm text-gray-600 dark:text-gray-300"><RotateCcw size={16} className="mx-auto" /></button>
                     <button onClick={() => handleApplyRotation(90)} className="flex-1 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition shadow-sm text-gray-600 dark:text-gray-300"><RotateCw size={16} className="mx-auto" /></button>
                   </div>
+                </div>
+              </div>
+
+              {/* Seção: Marca-texto */}
+              <div>
+                <div className="flex items-center mb-3">
+                  <Highlighter className="mr-2 text-emerald-500" size={18} />
+                  <span className="font-bold text-xs uppercase tracking-wider text-gray-700 dark:text-gray-300">{t.highlighter}</span>
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700 shadow-sm space-y-3">
+                  <button 
+                    onClick={() => setActiveTool(activeTool === 'highlight' ? 'none' : 'highlight')} 
+                    className={`w-full py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTool === 'highlight' ? 'bg-yellow-400 text-yellow-900 shadow-lg shadow-yellow-400/20' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-650'}`}
+                  >
+                    {activeTool === 'highlight' ? t.cancel : t.highlighter}
+                  </button>
+                  {highlights.length > 0 && (
+                    <button 
+                      onClick={() => setHighlights([])}
+                      className="w-full flex items-center justify-center space-x-2 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg text-[10px] font-bold uppercase transition"
+                    >
+                      <Eraser size={14} />
+                      <span>{t.clearHighlights}</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -561,9 +645,36 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                     src={currentImage} 
                     onLoad={handleImageLoad} 
                     className="block w-full h-full object-contain bg-white max-w-none max-h-none" 
-                    style={{ filter: `brightness(${brightness}%) contrast(${contrast}%)` }} 
+                    style={{ filter: `brightness(${brightness}%) contrast(${contrast}%) ${grayscale ? 'grayscale(100%)' : ''}` }} 
                     draggable={false} 
                   />
+                  <svg 
+                    className="absolute inset-0 pointer-events-none"
+                    viewBox={`0 0 ${imageRef.current?.naturalWidth || 0} ${imageRef.current?.naturalHeight || 0}`}
+                    preserveAspectRatio="none"
+                  >
+                    {highlights.map((path, idx) => (
+                      <polyline
+                        key={idx}
+                        points={path.map(p => `${p.x},${p.y}`).join(' ')}
+                        fill="none"
+                        stroke="rgba(255, 215, 0, 0.4)"
+                        strokeWidth={Math.max((imageRef.current?.naturalWidth || 0) * 0.02, 10)}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    ))}
+                    {currentHighlight && (
+                      <polyline
+                        points={currentHighlight.map(p => `${p.x},${p.y}`).join(' ')}
+                        fill="none"
+                        stroke="rgba(255, 215, 0, 0.4)"
+                        strokeWidth={Math.max((imageRef.current?.naturalWidth || 0) * 0.02, 10)}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    )}
+                  </svg>
                   {textElements.map(te => {
                     const scaleFactor = imageRef.current!.naturalWidth / (imgLayoutSize?.w || 1);
                     const visualScale = zoom;

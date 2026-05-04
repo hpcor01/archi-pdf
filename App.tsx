@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, X, Sparkles, Info, Users, ShieldCheck, Github, ExternalLink, BookOpen, Layers, Maximize2, FileText, Settings, LayoutGrid } from 'lucide-react';
+import { Plus, X, Sparkles, Info, Users, ShieldCheck, Github, ExternalLink, BookOpen, Layers, Maximize2, FileText, Settings, LayoutGrid, Command } from 'lucide-react';
 import TopBar from './components/TopBar';
 import DocumentColumn from './components/DocumentColumn';
 import EditorModal from './components/EditorModal';
@@ -12,7 +12,7 @@ import { INITIAL_SETTINGS, TRANSLATIONS } from './constants';
 import { generatePDF } from './services/pdfService';
 import { autoCropImage } from './services/cvService';
 
-const APP_VERSION_LABEL = "2.8";
+const APP_VERSION_LABEL = "2.9";
 
 const App = () => {
   const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
@@ -109,6 +109,17 @@ const App = () => {
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
   }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        handleSave();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [documents, settings]);
 
   const hasAnyPdf = useMemo(() => {
     return documents.some(doc => doc.items.some(item => item.type === 'pdf'));
@@ -406,6 +417,7 @@ const App = () => {
 
   const getChangelog = () => {
     return [
+      t.changelog_v2_9,
       t.changelog_v2_8,
       t.changelog_v2_7,
       t.changelog_v2_6,
@@ -589,8 +601,19 @@ const App = () => {
                       <div>
                          <h4 className="font-black text-gray-900 dark:text-white uppercase tracking-wider text-sm mb-1">{t.manualPdfTools}</h4>
                          <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">{t.manualPdfToolsText}</p>
-                      </div>
-                   </section>
+                       </div>
+                    </section>
+
+                    <section className="flex items-start space-x-4">
+                       <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 rounded-2xl flex-shrink-0">
+                          <Command size={24} />
+                       </div>
+                       <div>
+                          <h4 className="font-black text-gray-900 dark:text-white uppercase tracking-wider text-sm mb-1">{t.manualShortcuts}</h4>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed whitespace-pre-line">{t.manualShortcutsText}</p>
+                       </div>
+                    </section>
+
 
                    <section className="flex items-start space-x-4">
                       <div className="p-3 bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-2xl flex-shrink-0">
