@@ -153,7 +153,9 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     clearHighlights: "Limpar Marcações",
     brushSize: "Tamanho do Pincel",
      manualShortcuts: "Atalhos de Teclado",
-     manualShortcutsText: "• CTRL + S: Salvar documentos selecionados\n• CTRL + V: Colar imagem na coluna ativa\n• ESC: Fechar modais/voltar para grade\n• SETAS: Navegar entre páginas (Editor PDF)\n• ESPAÇO: Arrastar imagem (Editor de Imagem)"
+     manualShortcutsText: "• CTRL + S: Salvar documentos selecionados\n• CTRL + V: Colar imagem na coluna ativa\n• ESC: Fechar modais/voltar para grade\n• SETAS: Navegar entre páginas (Editor PDF)\n• ESPAÇO: Arrastar imagem (Editor de Imagem)\n• SCROLL: Ajustar tamanho de fonte/pincel",
+    textScrollTip: "Dica: utilize scroll para regular o tamanho da fonte",
+    brushScrollTip: "Dica: utilize scroll para regular o tamanho do pincel"
   },
   'en': {
     selectAll: "Select All",
@@ -296,7 +298,9 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     clearHighlights: "Clear Highlights",
     brushSize: "Brush Size",
      manualShortcuts: "Keyboard Shortcuts",
-     manualShortcutsText: "• CTRL + S: Save selected documents\n• CTRL + V: Paste image into active column\n• ESC: Close modals/back to grid\n• ARROWS: Navigate between pages (PDF Editor)\n• SPACE: Pan across image (Image Editor)"
+     manualShortcutsText: "• CTRL + S: Save selected documents\n• CTRL + V: Paste image into active column\n• ESC: Close modals/back to grid\n• ARROWS: Navigate between pages (PDF Editor)\n• SPACE: Pan across image (Image Editor)\n• SCROLL: Adjust font/brush size",
+    textScrollTip: "Tip: use scroll to adjust font size",
+    brushScrollTip: "Tip: use scroll to adjust brush size"
   },
   'es': {
     selectAll: "Seleccionar todo",
@@ -434,6 +438,8 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     pdfEditHighlight: "Nuevo: ¡Edición Completa!",
     pdfEditHighlightText: "¡Ahora puedes recortar páginas de PDF, girar y ajustar la perspectiva individualmente para cada hoja!",
     brushSize: "Tamaño del Pincel",
+    textScrollTip: "Consejo: use el scroll para ajustar el tamaño de fuente",
+    brushScrollTip: "Consejo: use el scroll para ajustar el tamaño del pincel"
   },
   'el': {
     selectAll: "Επιλογή όλων",
@@ -571,6 +577,8 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     pdfEditHighlight: "Νέα: Πλήρης Επεξεργασία!",
     pdfEditHighlightText: "Τώρα μπορείτε να περικόψετε σελίδες PDF, να τις περιστρέψετε και να προσαρμόσετε την προοπτική μεμονωμένα για κάθε φύλλο!",
     brushSize: "Μέγεθος Πινέλου",
+    textScrollTip: "Συμβουλή: χρησιμοποιήστε το scroll για να ρυθμίσετε το μέγεθος της γραμματοσειράς",
+    brushScrollTip: "Συμβουλή: χρησιμοποιήστε το scroll για να ρυθμίσετε το μέγεθος του πινέλου"
   },
   'he': {
     selectAll: "בחר הכל",
@@ -708,5 +716,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     pdfEditHighlight: "חדש: עריכה מלאה!",
     pdfEditHighlightText: "כעת תוכלו לחתוך עמודי PDF, לסובב ולהתאים פרספקטיבה בנפרד לכל גיליון!",
     brushSize: "גודל מברשת",
+    textScrollTip: "טיפ: השתמש בגלילה כדי לכוונן את גודל הגופן",
+    brushScrollTip: "טיפ: השתמש בגלילה כדי לכוונן את גודל המברשת"
   }
 };

@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Check, RotateCcw, ZoomIn, ZoomOut, Search, Crop as CropIcon, Sliders, RotateCw, Maximize, Sparkles, Wand2, Type as TypeIcon, Trash2, Highlighter, Eraser } from 'lucide-react';
+import { X, Check, RotateCcw, ZoomIn, ZoomOut, Search, Crop as CropIcon, Sliders, RotateCw, Maximize, Sparkles, Wand2, Type as TypeIcon, Trash2, Highlighter, Eraser, Lightbulb } from 'lucide-react';
 import { ImageItem, Language, TextElement } from '../types';
 import { detectDocumentCorners, applyPerspectiveCrop, applyImageAdjustments } from '../services/cvService';
 import { TRANSLATIONS } from '../constants';
@@ -452,7 +452,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                 <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700 shadow-sm space-y-3">
                   <button 
                     onClick={() => setActiveTool(activeTool === 'crop' ? 'none' : 'crop')} 
-                    className={`w-full py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTool === 'crop' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-650'}`}
+                    className={`w-full py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTool === 'crop' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20' : 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg shadow-emerald-500/20'}`}
                   >
                     {activeTool === 'crop' ? t.cancel : t.manualCrop}
                   </button>
@@ -500,8 +500,8 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                     </span>
                   </label>
                   <div className="flex space-x-2 pt-2 border-t border-gray-100 dark:border-gray-700">
-                    <button onClick={() => handleApplyRotation(-90)} className="flex-1 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition shadow-sm text-gray-600 dark:text-gray-300"><RotateCcw size={16} className="mx-auto" /></button>
-                    <button onClick={() => handleApplyRotation(90)} className="flex-1 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition shadow-sm text-gray-600 dark:text-gray-300"><RotateCw size={16} className="mx-auto" /></button>
+                    <button onClick={() => handleApplyRotation(-90)} className="flex-1 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition shadow-sm"><RotateCcw size={16} className="mx-auto" /></button>
+                    <button onClick={() => handleApplyRotation(90)} className="flex-1 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition shadow-sm"><RotateCw size={16} className="mx-auto" /></button>
                   </div>
                 </div>
               </div>
@@ -515,10 +515,18 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                 <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700 shadow-sm space-y-3">
                   <button 
                     onClick={() => setActiveTool(activeTool === 'highlight' ? 'none' : 'highlight')} 
-                    className={`w-full py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTool === 'highlight' ? 'bg-yellow-400 text-yellow-900 shadow-lg shadow-yellow-400/20' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-650'}`}
+                    className={`w-full py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTool === 'highlight' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20' : 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg shadow-emerald-500/20'}`}
                   >
                     {activeTool === 'highlight' ? t.cancel : t.highlighter}
                   </button>
+                  
+                  {activeTool === 'highlight' && (
+                    <div className="flex items-center space-x-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-100 dark:border-yellow-900/30 text-[9px] text-yellow-700 dark:text-yellow-400 font-medium mb-2">
+                      <Lightbulb size={12} className="flex-shrink-0" />
+                      <span>{t.brushScrollTip}</span>
+                    </div>
+                  )}
+
                     {highlights.length > 0 && (
                       <button 
                         onClick={() => setHighlights([])}
@@ -560,6 +568,13 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                   >
                     {t.addText}
                   </button>
+
+                  {activeTool === 'text' && (
+                    <div className="flex items-center space-x-2 p-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-100 dark:border-emerald-900/30 text-[9px] text-emerald-700 dark:text-emerald-400 font-medium">
+                      <Lightbulb size={12} className="flex-shrink-0" />
+                      <span>{t.textScrollTip}</span>
+                    </div>
+                  )}
 
                   {selectedTextId && (
                     <div className="space-y-4 pt-4 border-t border-gray-100 dark:border-gray-700 animate-fade-in">
