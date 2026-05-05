@@ -151,6 +151,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     grayscale: "Preto e Branco",
     highlighter: "Marca-texto",
     clearHighlights: "Limpar Marcações",
+    brushSize: "Tamanho do Pincel",
      manualShortcuts: "Atalhos de Teclado",
      manualShortcutsText: "• CTRL + S: Salvar documentos selecionados\n• CTRL + V: Colar imagem na coluna ativa\n• ESC: Fechar modais/voltar para grade\n• SETAS: Navegar entre páginas (Editor PDF)\n• ESPAÇO: Arrastar imagem (Editor de Imagem)"
   },
@@ -293,6 +294,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     grayscale: "Black & White",
     highlighter: "Highlighter",
     clearHighlights: "Clear Highlights",
+    brushSize: "Brush Size",
      manualShortcuts: "Keyboard Shortcuts",
      manualShortcutsText: "• CTRL + S: Save selected documents\n• CTRL + V: Paste image into active column\n• ESC: Close modals/back to grid\n• ARROWS: Navigate between pages (PDF Editor)\n• SPACE: Pan across image (Image Editor)"
   },
@@ -430,7 +432,8 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     manualSettings: "Configuración y Privacidad",
     manualSettingsText: "Active 'Compress' para generar archivos ligeros y optimizados. Use 'OCR AI' para hacer el texto de las imágenes buscable en el PDF final. Alterne entre temas Claro/Oscuro y elija entre 5 idiomas. Todo el procesamiento se realiza 100% en su navegador — ningún archivo se envía a servidores externos.",
     pdfEditHighlight: "Nuevo: ¡Edición Completa!",
-    pdfEditHighlightText: "¡Ahora puedes recortar páginas de PDF, girar y ajustar la perspectiva individualmente para cada hoja!"
+    pdfEditHighlightText: "¡Ahora puedes recortar páginas de PDF, girar y ajustar la perspectiva individualmente para cada hoja!",
+    brushSize: "Tamaño del Pincel",
   },
   'el': {
     selectAll: "Επιλογή όλων",
@@ -566,7 +569,8 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     manualSettings: "Ρυθμίσεις και Απόρρητο",
     manualSettingsText: "Ενεργοποιήστε 'Compress' για ελαφριά, βελτιστοποιημένα αρχεία. Χρησιμοποιήστε 'OCR AI' για αναζητήσιμο κείμενο στο τελικό PDF. Εναλλαγή μεταξύ Φωτεινού/Σκοτεινού θέματος και επιλογή από 5 γλώσσες. Όλη η επεξεργασία γίνεται 100% στον περιηγητή σας — κανένα αρχείο δεν στέλνεται σε εξωτερικούς διακομιστές.",
     pdfEditHighlight: "Νέα: Πλήρης Επεξεργασία!",
-    pdfEditHighlightText: "Τώρα μπορείτε να περικόψετε σελίδες PDF, να τις περιστρέψετε και να προσαρμόσετε την προοπτική μεμονωμένα για κάθε φύλλο!"
+    pdfEditHighlightText: "Τώρα μπορείτε να περικόψετε σελίδες PDF, να τις περιστρέψετε και να προσαρμόσετε την προοπτική μεμονωμένα για κάθε φύλλο!",
+    brushSize: "Μέγεθος Πινέλου",
   },
   'he': {
     selectAll: "בחר הכל",
@@ -702,6 +706,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     manualSettings: "הגדרות ופרטיות",
     manualSettingsText: "הפעל 'Compress' לקבצים קלים ומותאמים. השתמש ב-'OCR AI' כדי שהטקסט בתמונות יהפוך לניתן לחיפוש ב-PDF הסופי. החלף בין ערכות נושא בהירה/כהה ובחר מ-5 שפות. כל העיבוד מתבצע 100% בדפדפן שלך — אף קובץ לא נשלח לשרתים חיצוניים.",
     pdfEditHighlight: "חדש: עריכה מלאה!",
-    pdfEditHighlightText: "כעת תוכלו לחתוך עמודי PDF, לסובב ולהתאים פרספקטיבה בנפרד לכל גיליון!"
+    pdfEditHighlightText: "כעת תוכלו לחתוך עמודי PDF, לסובב ולהתאים פרספקטיבה בנפרד לכל גיליון!",
+    brushSize: "גודל מברשת",
   }
 };

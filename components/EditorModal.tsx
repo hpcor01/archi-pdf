@@ -41,6 +41,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
   const [grayscale, setGrayscale] = useState(false);
   const [highlights, setHighlights] = useState<Point[][]>([]);
   const [currentHighlight, setCurrentHighlight] = useState<Point[] | null>(null);
+  const [brushSize, setBrushSize] = useState(40);
 
   const imageRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -376,8 +377,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.strokeStyle = 'rgba(255, 215, 0, 0.4)'; // Amarelo marca-texto
-        const strokeWidth = Math.max(img.width * 0.02, 10);
-        ctx.lineWidth = strokeWidth;
+        ctx.lineWidth = brushSize;
 
         highlights.forEach(path => {
           if (path.length < 2) return;
@@ -406,6 +406,21 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
     } catch (err) {
       alert(t.saveError);
     } finally { setIsProcessing(false); }
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    if (activeTool === 'text' && selectedTextId) {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -2 : 2;
+      const currentText = textElements.find(te => te.id === selectedTextId);
+      if (currentText) {
+        handleUpdateText(selectedTextId, { fontSize: Math.max(8, currentText.fontSize + delta) });
+      }
+    } else if (activeTool === 'highlight') {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -2 : 2;
+      setBrushSize(prev => Math.max(5, Math.min(300, prev + delta)));
+    }
   };
 
   return (
@@ -504,14 +519,30 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                   >
                     {activeTool === 'highlight' ? t.cancel : t.highlighter}
                   </button>
-                  {highlights.length > 0 && (
-                    <button 
-                      onClick={() => setHighlights([])}
-                      className="w-full flex items-center justify-center space-x-2 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg text-[10px] font-bold uppercase transition"
-                    >
-                      <Eraser size={14} />
-                      <span>{t.clearHighlights}</span>
-                    </button>
+                    {highlights.length > 0 && (
+                      <button 
+                        onClick={() => setHighlights([])}
+                        className="w-full flex items-center justify-center space-x-2 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg text-[10px] font-bold uppercase transition"
+                      >
+                        <Eraser size={14} />
+                        <span>{t.clearHighlights}</span>
+                      </button>
+                    )}
+                  {activeTool === 'highlight' && (
+                    <div className="space-y-2 pt-3 border-t border-gray-100 dark:border-gray-700 animate-fade-in">
+                      <div className="flex justify-between text-[10px] font-bold text-gray-500 uppercase">
+                        <span>{t.brushSize}</span>
+                        <span>{brushSize}px</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="5" 
+                        max="300" 
+                        value={brushSize} 
+                        onChange={(e) => setBrushSize(parseInt(e.target.value))} 
+                        className="w-full accent-yellow-400 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer" 
+                      />
+                    </div>
                   )}
                 </div>
               </div>
@@ -600,7 +631,11 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
               </button>
             </div>
           </div>
-          <div className="flex-1 bg-gray-100 dark:bg-[#0d1117] flex overflow-auto relative select-none custom-scrollbar" ref={containerRef}>
+          <div 
+            className="flex-1 bg-gray-100 dark:bg-[#0d1117] flex overflow-auto relative select-none custom-scrollbar" 
+            ref={containerRef}
+            onWheel={handleWheel}
+          >
             <div className="min-w-full min-h-full flex items-center justify-center p-20">
                 {isProcessing && (
                   <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/60 backdrop-blur-md">
@@ -659,7 +694,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                         points={path.map(p => `${p.x},${p.y}`).join(' ')}
                         fill="none"
                         stroke="rgba(255, 215, 0, 0.4)"
-                        strokeWidth={Math.max((imageRef.current?.naturalWidth || 0) * 0.02, 10)}
+                        strokeWidth={brushSize}
                         strokeLinecap="round"
                         strokeLinejoin="round"
                       />
@@ -669,7 +704,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
                         points={currentHighlight.map(p => `${p.x},${p.y}`).join(' ')}
                         fill="none"
                         stroke="rgba(255, 215, 0, 0.4)"
-                        strokeWidth={Math.max((imageRef.current?.naturalWidth || 0) * 0.02, 10)}
+                        strokeWidth={brushSize}
                         strokeLinecap="round"
                         strokeLinejoin="round"
                       />
