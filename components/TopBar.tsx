@@ -6,7 +6,7 @@ import { TRANSLATIONS } from '../constants';
 
 interface TopBarProps {
   settings: AppSettings;
-  updateSetting: (key: keyof AppSettings, value: boolean) => void;
+  updateSetting: (key: keyof AppSettings, value: any) => void;
   onSave: () => void;
   onClearAll: () => void;
   onRemoveBgBatch: () => void;
@@ -162,13 +162,12 @@ const TopBar: React.FC<TopBarProps> = ({
         <div className="h-6 w-px bg-gray-300 dark:bg-gray-700 mx-2"></div>
 
         {/* Compression Switch Toggle - Conditionally Enabled */}
-        <div className="relative">
-          <div className={`flex items-center space-x-3 transition-opacity duration-300 ${hasAnyPdf ? 'opacity-100' : 'opacity-30 pointer-events-none grayscale'}`}>
+        <div className="relative flex items-center space-x-4">
+          <div className="flex items-center space-x-3 transition-opacity duration-300">
             <div className="flex flex-col items-end">
                <span className="text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase leading-none mb-1 tracking-widest">{t.compress}</span>
                <button 
                   type="button"
-                  disabled={!hasAnyPdf}
                   onClick={() => updateSetting('compressPdf', !settings.compressPdf)}
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none shadow-inner ${settings.compressPdf ? 'bg-orange-500' : 'bg-gray-300 dark:bg-gray-700'}`}
                   aria-pressed={settings.compressPdf}
@@ -179,11 +178,29 @@ const TopBar: React.FC<TopBarProps> = ({
                </button>
             </div>
             {settings.compressPdf && (
-              <span title={t.compressPdf}>
+              <span title={t.compressPdf} className="hidden sm:inline">
                 <Zap size={18} className="text-orange-500" />
               </span>
             )}
           </div>
+
+          {/* Compression Slider */}
+          {settings.compressPdf && (
+            <div className="flex flex-col mx-2 items-center justify-center w-28 sm:w-36 transition-all duration-300 animate-fade-in">
+              <input 
+                type="range" 
+                min="0" max="100" 
+                value={settings.compressionLevel} 
+                onChange={(e) => updateSetting('compressionLevel', Number(e.target.value))}
+                className="w-full h-1.5 bg-gray-300 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-orange-500 hover:accent-orange-400"
+                title={`${settings.compressionLevel}%`}
+              />
+              <div className="flex w-full justify-between mt-1.5 px-0.5">
+                <span className="text-[8px] text-gray-500 font-bold uppercase tracking-tighter truncate max-w-[50%]" title={t.betterCompression}>{t.betterCompression}</span>
+                <span className="text-[8px] text-gray-500 font-bold uppercase tracking-tighter text-right truncate max-w-[50%]" title={t.betterQuality}>{t.betterQuality}</span>
+              </div>
+            </div>
+          )}
 
           {/* Destaque de Novo Recurso (Tooltip contextual) */}
           {showCompressionHighlight && (

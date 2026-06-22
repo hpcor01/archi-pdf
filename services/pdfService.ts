@@ -50,7 +50,7 @@ const pLimit = (concurrency: number) => {
 /**
  * Converts a PDF file (via ArrayBuffer) into an array of PNG/JPG images (one per page)
  */
-const renderPdfToImages = async (arrayBuffer: ArrayBuffer, t: any, compress: boolean = false): Promise<{ data: Uint8Array, base64: string, format: 'png' | 'jpg' }[]> => {
+const renderPdfToImages = async (arrayBuffer: ArrayBuffer, t: any, compress: boolean = false, compressionLevel: number = 50): Promise<{ data: Uint8Array, base64: string, format: 'png' | 'jpg' }[]> => {
   if (!window.pdfjsLib) throw new Error(t.pdfjsLoadError || "PDF.js not loaded");
   
   const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -61,8 +61,8 @@ const renderPdfToImages = async (arrayBuffer: ArrayBuffer, t: any, compress: boo
   
   const renderPage = async (index: number) => {
     const page = await pdf.getPage(index);
-    // Reduzimos o scale de 1.5 para 1.25 para aumentar compressão mantendo nitidez razoável
-    const scale = compress ? 1.25 : 2.0;
+    // Ajustado pelo slider: 0 -> scale 1.0; 100 -> scale 2.0
+    const scale = compress ? 1.0 + (1.0 * (compressionLevel / 100)) : 2.0;
     const viewport = page.getViewport({ scale });
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
@@ -76,8 +76,8 @@ const renderPdfToImages = async (arrayBuffer: ArrayBuffer, t: any, compress: boo
     
     const format = compress ? 'jpg' : 'png';
     const mime = compress ? 'image/jpeg' : 'image/png';
-    // Reduzimos qualidade de 0.6 para 0.5 para maior compressão sem artefatos visíveis de leitura
-    const quality = compress ? 0.5 : 1.0;
+    // Ajustado pelo slider: 0 -> 0.2 (máx compressão); 100 -> 1.0 (melhor qualidade)
+    const quality = compress ? 0.2 + (0.8 * (compressionLevel / 100)) : 1.0;
     
     const base64 = canvas.toDataURL(mime, quality);
     const blob: Blob = await new Promise((resolve, reject) => {
@@ -107,7 +107,7 @@ const performOCR = async (base64: string): Promise<any[]> => {
 };
 
 // Helper to convert any image URL (blob/base64) to PNG/JPG bytes via Canvas
-const getImageInfo = async (url: string, t: any, compress: boolean = false): Promise<{ data: Uint8Array, base64: string, format: 'png' | 'jpg' }> => {
+const getImageInfo = async (url: string, t: any, compress: boolean = false, compressionLevel: number = 50): Promise<{ data: Uint8Array, base64: string, format: 'png' | 'jpg' }> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'Anonymous';
@@ -124,8 +124,8 @@ const getImageInfo = async (url: string, t: any, compress: boolean = false): Pro
       
       const format = compress ? 'jpg' : 'png';
       const mime = compress ? 'image/jpeg' : 'image/png';
-      // Ajustando para qualidade 0.5 se compressão estiver ativa
-      const quality = compress ? 0.5 : 1.0;
+      // Ajustado pelo slider: 0 -> 0.2 (máx compressão); 100 -> 1.0 (melhor qualidade)
+      const quality = compress ? 0.2 + (0.8 * (compressionLevel / 100)) : 1.0;
 
       const base64 = canvas.toDataURL(mime, quality);
       canvas.toBlob((blob) => {
@@ -158,6 +158,7 @@ export const generatePDF = async (
   t: any, 
   useOCR: boolean = false, 
   compressPdf: boolean = false,
+  compressionLevel: number = 50,
   saveSeparately: boolean = true,
   onProgress?: (current: number, total: number) => void
 ): Promise<void> => {
@@ -251,13 +252,13 @@ export const generatePDF = async (
         if (item.type === 'pdf') {
           try {
             const buffer = await getArrayBuffer(item);
-            pages = await renderPdfToImages(buffer, t, compressPdf);
+            pages = await renderPdfToImages(buffer, t, compressPdf, compressionLevel);
           } catch (error) {
             console.error(`Error processing PDF ${item.name}:`, error);
           }
         } else {
           try {
-            const info = await getImageInfo(item.url, t, compressPdf);
+            const info = await getImageInfo(item.url, t, compressPdf, compressionLevel);
             pages = [info];
           } catch (error) {
             console.error(`Error processing image ${item.name}:`, error);

@@ -12,7 +12,7 @@ import { INITIAL_SETTINGS, TRANSLATIONS } from './constants';
 import { generatePDF } from './services/pdfService';
 import { autoCropImage } from './services/cvService';
 
-const APP_VERSION_LABEL = "2.9";
+const APP_VERSION_LABEL = "2.9.1";
 
 const App = () => {
   const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
@@ -178,7 +178,7 @@ const App = () => {
 
   const handleUpdateApp = () => window.location.reload();
 
-  const handleUpdateSetting = (key: keyof AppSettings, value: boolean) => {
+  const handleUpdateSetting = (key: keyof AppSettings, value: any) => {
     setSettings(prev => ({ ...prev, [key]: value }));
   };
 
@@ -393,6 +393,7 @@ const App = () => {
         t, 
         settings.useOCR, 
         settings.compressPdf,
+        settings.compressionLevel,
         settings.saveSeparately,
         (current, total) => setSaveProgress({ current, total })
       );
