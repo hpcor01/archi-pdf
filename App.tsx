@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Plus, X, Sparkles, Info, Users, ShieldCheck, Github, ExternalLink, BookOpen, Layers, Maximize2, FileText, Settings, LayoutGrid, Command } from 'lucide-react';
 import TopBar from './components/TopBar';
 import DocumentColumn from './components/DocumentColumn';
@@ -47,6 +47,12 @@ const App = () => {
   const [isUpdateAvailable, setIsUpdateAvailable] = useState(false);
   const [showVersionInfo, setShowVersionInfo] = useState(false);
   const [showAboutInfo, setShowAboutInfo] = useState(false);
+  const [pendingPasteItems, setPendingPasteItems] = useState<ImageItem[] | null>(null);
+
+  const documentsRef = useRef(documents);
+  useEffect(() => {
+    documentsRef.current = documents;
+  }, [documents]);
 
   const t = TRANSLATIONS[language];
 
@@ -95,20 +101,31 @@ const App = () => {
           };
         });
 
-        setDocuments(prev => {
-          if (prev.length === 0) return prev;
-          const targetIdx = prev.findIndex(d => d.selected);
-          const finalIdx = targetIdx !== -1 ? targetIdx : 0;
-          return prev.map((doc, idx) => 
-            idx === finalIdx ? { ...doc, items: [...doc.items, ...newItems] } : doc
-          );
-        });
+        if (documentsRef.current.length > 1) {
+          setPendingPasteItems(newItems);
+        } else {
+          setDocuments(prev => {
+            if (prev.length === 0) return prev;
+            return prev.map((doc, idx) => 
+              idx === 0 ? { ...doc, items: [...doc.items, ...newItems] } : doc
+            );
+          });
+        }
       }
     };
 
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
   }, []);
+
+  const handleConfirmPaste = (docId: string) => {
+    if (pendingPasteItems) {
+      setDocuments(prev => prev.map(doc => 
+        doc.id === docId ? { ...doc, items: [...doc.items, ...pendingPasteItems] } : doc
+      ));
+      setPendingPasteItems(null);
+    }
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -680,6 +697,36 @@ const App = () => {
                        {t.close}
                      </button>
                   </div>
+                </div>
+             </div>
+          </div>
+        )}
+
+        {/* Modal de Seleção de Coluna para Colar */}
+        {pendingPasteItems && documents.length > 1 && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[2px] animate-fade-in">
+             <div className="bg-white dark:bg-gray-800 w-full max-w-md p-6 rounded-3xl shadow-2xl border border-gray-200 dark:border-gray-700">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+                  {t.selectColumnToPaste}
+                </h3>
+                <div className="space-y-2 mb-6 max-h-60 overflow-y-auto custom-scrollbar">
+                  {documents.map(doc => (
+                    <button
+                      key={doc.id}
+                      onClick={() => handleConfirmPaste(doc.id)}
+                      className="w-full text-left p-3 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:border-emerald-300 dark:hover:border-emerald-700 transition"
+                    >
+                      <span className="font-medium text-gray-800 dark:text-gray-200">{doc.title}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="flex justify-end">
+                  <button 
+                    onClick={() => setPendingPasteItems(null)}
+                    className="px-4 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
+                  >
+                    {t.cancel}
+                  </button>
                 </div>
              </div>
           </div>
