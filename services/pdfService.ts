@@ -249,6 +249,10 @@ export const generatePDF = async (
           words?: any[] 
         }[] = [];
 
+        let isImageFastPath = false;
+        let imageFastPathData: Uint8Array | null = null;
+        let imageFastPathFormat: 'png' | 'jpg' | null = null;
+
         if (item.type === 'pdf') {
           try {
             const buffer = await getArrayBuffer(item);
@@ -258,10 +262,50 @@ export const generatePDF = async (
           }
         } else {
           try {
-            const info = await getImageInfo(item.url, t, compressPdf, compressionLevel);
-            pages = [info];
+            if (!compressPdf && !useOCR) {
+              const buffer = await getArrayBuffer(item);
+              const arr = new Uint8Array(buffer);
+              // Tenta identificar se é PNG ou JPG para evitar canvas e preservar 100% da resolução
+              if (arr.length > 8 && arr[0] === 0x89 && arr[1] === 0x50 && arr[2] === 0x4E && arr[3] === 0x47) {
+                  isImageFastPath = true;
+                  imageFastPathData = arr;
+                  imageFastPathFormat = 'png';
+              } else if (arr.length > 2 && arr[0] === 0xFF && arr[1] === 0xD8) {
+                  isImageFastPath = true;
+                  imageFastPathData = arr;
+                  imageFastPathFormat = 'jpg';
+              }
+            }
+
+            if (!isImageFastPath) {
+              const info = await getImageInfo(item.url, t, compressPdf, compressionLevel);
+              pages = [info];
+            }
           } catch (error) {
             console.error(`Error processing image ${item.name}:`, error);
+          }
+        }
+
+        if (isImageFastPath && imageFastPathData && imageFastPathFormat) {
+          try {
+            let image;
+            if (imageFastPathFormat === 'jpg') {
+              image = await pdfDoc.embedJpg(imageFastPathData);
+            } else {
+              image = await pdfDoc.embedPng(imageFastPathData);
+            }
+            const { width, height } = image.scale(1);
+            const page = pdfDoc.addPage([width, height]);
+            page.drawImage(image, { x: 0, y: 0, width, height });
+            addedPageCount++;
+            currentPage++;
+            reportProgress();
+            continue; // Já adicionado, pula para o próximo item
+          } catch (err) {
+            console.error("Image Fast Path failed, will fallback to canvas if needed", err);
+            // Fallback em caso de falha silenciosa
+            const info = await getImageInfo(item.url, t, compressPdf, compressionLevel);
+            pages = [info];
           }
         }
 

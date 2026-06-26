@@ -414,7 +414,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
 
         const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         const pdfPage = await pdf.getPage(page.originalIndex + 1);
-        const viewport = pdfPage.getViewport({ scale: 2.5 });
+        const viewport = pdfPage.getViewport({ scale: 4.5 });
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
         canvas.width = viewport.width;
@@ -883,7 +883,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
 
         const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         const pdfPage = await pdf.getPage(page.originalIndex + 1);
-        const viewport = pdfPage.getViewport({ scale: 2.5 });
+        const viewport = pdfPage.getViewport({ scale: 4.5 });
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
         canvas.width = viewport.width;
