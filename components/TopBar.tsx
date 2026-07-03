@@ -14,7 +14,6 @@ interface TopBarProps {
   canUndo?: boolean;
   isSaving: boolean;
   isProcessing: boolean;
-  isPdfSelected: boolean;
   hasAnyPdf: boolean; 
   allSelected: boolean;
   hasSelection: boolean;
@@ -47,7 +46,6 @@ const TopBar: React.FC<TopBarProps> = ({
   canUndo,
   isSaving,
   isProcessing,
-  isPdfSelected,
   hasAnyPdf,
   allSelected,
   hasSelection,

@@ -343,10 +343,9 @@ export const generatePDF = async (
             const naturalH = img.height;
 
             for (const word of pageInfo.words) {
-              const { x0, y0, x1, y1 } = word.bbox;
+              const { x0, y0, y1 } = word.bbox;
               const pdfX = (x0 / naturalW) * width;
               const pdfY = height - ((y1 / naturalH) * height);
-              const pdfW = ((x1 - x0) / naturalW) * width;
               const pdfH = ((y1 - y0) / naturalH) * height;
 
               try {

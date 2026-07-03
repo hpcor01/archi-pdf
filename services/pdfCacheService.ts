@@ -69,7 +69,8 @@ class PdfCacheService {
     // LIMPEZA ANTES DE SALVAR: Remover referências a URLs temporárias e arquivos originais
     // para evitar inconsistências e excesso de peso no IndexedDB
     const pagesToSave = pages.map(page => {
-      const { originalFile, ...rest } = page;
+      const rest = { ...page };
+      delete rest.originalFile;
       // Se tivermos o Blob, salvamos ele. A string 'thumbnail' (blob:url) não deve ser salva
       // porque ela expira quando a página é atualizada.
       return {
@@ -98,6 +99,37 @@ class PdfCacheService {
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });
+  }
+
+  async pruneOldCache(maxAgeDays = 7): Promise<void> {
+    try {
+      const db = await this.init();
+      const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
+      const now = Date.now();
+
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction(STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.openCursor();
+
+        request.onsuccess = (event) => {
+          const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>).result;
+          if (cursor) {
+            const value = cursor.value;
+            if (value && value.timestamp && (now - value.timestamp > maxAgeMs)) {
+              cursor.delete();
+            }
+            cursor.continue();
+          } else {
+            resolve();
+          }
+        };
+
+        request.onerror = () => reject(request.error);
+      });
+    } catch (e) {
+      console.warn('[PDF Cache] Failed to prune old cache entries:', e);
+    }
   }
 }
 

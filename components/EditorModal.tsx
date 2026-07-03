@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Check, RotateCcw, ZoomIn, ZoomOut, Search, Crop as CropIcon, Sliders, RotateCw, Maximize, Sparkles, Wand2, Type as TypeIcon, Trash2, Highlighter, Eraser, Lightbulb } from 'lucide-react';
+import { X, Check, RotateCcw, ZoomIn, ZoomOut, Crop as CropIcon, Sliders, RotateCw, Maximize, Sparkles, Wand2, Type as TypeIcon, Trash2, Highlighter, Eraser, Lightbulb } from 'lucide-react';
 import { ImageItem, Language, TextElement } from '../types';
 import { detectDocumentCorners, applyPerspectiveCrop, applyImageAdjustments } from '../services/cvService';
 import { TRANSLATIONS } from '../constants';
@@ -50,10 +50,15 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
   const dragStartPosRef = useRef<Point>({ x: 0, y: 0 }); 
   const initialPointsRef = useRef<Point[] | null>(null);
 
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space') setIsSpacePressed(true);
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') onCloseRef.current();
     };
     const handleKeyUp = (e: KeyboardEvent) => {
       if (e.code === 'Space') setIsSpacePressed(false);
@@ -303,7 +308,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
       setPoints(null);
       setActiveTool('none'); // Torna a ferramenta de recorte invisível após aplicar
       await handlePerformAutoDetection(croppedUrl);
-    } catch (err) {
+    } catch {
       alert(t.applyCropError);
     } finally {
       setIsProcessing(false);
@@ -403,7 +408,7 @@ const EditorModal: React.FC<EditorModalProps> = ({ item, isOpen, onClose, onUpda
       
       onUpdate({ ...item, url: finalUrl });
       onClose();
-    } catch (err) {
+    } catch {
       alert(t.saveError);
     } finally { setIsProcessing(false); }
   };

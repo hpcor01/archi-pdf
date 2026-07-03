@@ -1,12 +1,11 @@
 
 import React, { useState, useRef } from 'react';
 import { Trash2, FileText, Plus, Search, RotateCw, Undo2, RotateCcw, Pencil } from 'lucide-react';
-import { DocumentGroup, ImageItem, AppSettings, Language } from '../types';
+import { DocumentGroup, ImageItem, Language } from '../types';
 import { TRANSLATIONS } from '../constants';
 
 interface DocumentColumnProps {
   document: DocumentGroup;
-  settings: AppSettings;
   onAddItem: (docId: string, files: FileList) => void;
   onRemoveItem: (docId: string, itemId: string) => void;
   onEditItem: (item: ImageItem) => void;
@@ -22,7 +21,6 @@ interface DocumentColumnProps {
 
 const DocumentColumn: React.FC<DocumentColumnProps> = ({ 
   document, 
-  settings, 
   onAddItem, 
   onRemoveItem, 
   onEditItem, 
@@ -89,7 +87,7 @@ const DocumentColumn: React.FC<DocumentColumnProps> = ({
     if (!e.dataTransfer.types.includes('Files')) setDragOverIndex(index);
   };
 
-  const handleItemDragLeave = (e: React.DragEvent) => setDragOverIndex(null);
+  const handleItemDragLeave = () => setDragOverIndex(null);
 
   const handleItemDrop = (e: React.DragEvent, index: number) => {
     e.preventDefault();

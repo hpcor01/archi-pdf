@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Save, Trash2, ArrowLeft, ArrowRight, ZoomIn, ZoomOut, Search, Grid, Plus, RotateCcw, RotateCw, Undo2, RefreshCcw, Check, Crop as CropIcon, Sparkles, GripVertical, Scissors } from 'lucide-react';
+import { X, Trash2, ArrowLeft, ArrowRight, ZoomIn, ZoomOut, Search, Grid, Plus, RotateCcw, RotateCw, Undo2, Check, Crop as CropIcon, Sparkles, GripVertical, Scissors } from 'lucide-react';
 import { ImageItem, Language, AppSettings } from '../types';
 import { TRANSLATIONS } from '../constants';
 import { detectDocumentCorners, applyPerspectiveCrop, applyImageAdjustments } from '../services/cvService';
@@ -130,7 +130,7 @@ const SortablePageItem: React.FC<SortablePageItemProps> = ({ page, index, pageSh
 };
 
 // --- Main Component ---
-const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, onUpdate, onSplit, settings, language }) => {
+const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, onUpdate, onSplit, language }) => {
   const t = TRANSLATIONS[language];
   const [pages, setPages] = useState<PdfPage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -155,6 +155,8 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
   const [splitRanges, setSplitRanges] = useState<string[]>([""]);
 
   const loadIdRef = useRef(0);
+  const highResLoadIdRef = useRef(0);
+  const initializeEditorRef = useRef<() => Promise<void>>(async () => undefined);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const pagesRef = useRef<PdfPage[]>([]);
@@ -227,7 +229,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
 
   useEffect(() => {
     if (isOpen) {
-      initializeEditor();
+      void initializeEditorRef.current();
       setShowPdfHighlight(true);
     }
   }, [isOpen]);
@@ -269,8 +271,10 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
     }
   };
 
+  initializeEditorRef.current = initializeEditor;
+
   // Optimized: loads pages in parallel chunks of 3
-  const processFile = async (url: string, type: 'pdf' | 'image', file: File | undefined, currentLoadId: number) => {
+  const processFile = useCallback(async (url: string, type: 'pdf' | 'image', file: File | undefined, currentLoadId: number) => {
     if (type === 'pdf') {
       if (!window.pdfjsLib) return;
       let arrayBuffer: ArrayBuffer;
@@ -379,10 +383,13 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
         isModified: false,
       }]);
     }
-  };
+  }, [item.id]);
 
-  const loadHighRes = async (index: number) => {
+  const loadHighRes = useCallback(async (index: number) => {
     const page = pages[index];
+    if (!page) return;
+    highResLoadIdRef.current += 1;
+    const currentHighResLoadId = highResLoadIdRef.current;
 
     // Limpamos a URL de alta resolução imediatamente para evitar que a página 
     // anterior continue visível (o que causava um efeito de transição/troca)
@@ -442,6 +449,8 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
         setPageZoom(fitZoom);
       }
 
+      if (highResLoadIdRef.current !== currentHighResLoadId) return;
+
       setHighResPageUrl(url);
       setImgNaturalSize({ w, h });
 
@@ -449,8 +458,12 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
         setPageHistory([url]);
         setHistoryIndex(0);
       }
-    } catch (e) { console.error(e); }
-  };
+    } catch (e) {
+      if (highResLoadIdRef.current === currentHighResLoadId) {
+        console.error(e);
+      }
+    }
+  }, [historyIndex, item.id, pages]);
 
   const triggerDetection = async (url: string, w: number, h: number) => {
     setIsLoading(true);
@@ -467,7 +480,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
       setIsCropping(false);
       loadHighRes(viewingPageIndex);
     }
-  }, [viewingPageIndex]);
+  }, [viewingPageIndex, loadHighRes]);
 
   const markCurrentPageModified = () => {
     if (viewingPageIndex === null) return;
@@ -686,6 +699,12 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
     }
   };
 
+  const withoutOriginalFile = (page: PdfPage): PdfPage => {
+    const nextPage = { ...page };
+    delete nextPage.originalFile;
+    return nextPage;
+  };
+
   // --- Optimized Save: copyPages for unmodified, PNG for modified ---
   const handleSaveAll = async () => {
     if (!window.PDFLib || !window.pdfjsLib) return;
@@ -732,7 +751,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
       // Atualizar as referências das páginas para o NOVO arquivo gerado
       // IMPORTANTE: Removemos 'originalFile' para forçar o uso do novo binário gerado (ou cache)
       const updatedPages: PdfPage[] = pages.map((p, idx) => {
-        const { originalFile, ...rest } = p;
+        const rest = withoutOriginalFile(p);
         return {
           ...rest,
           sourceUrl: newUrl,
@@ -836,7 +855,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
         // Otimalização: Pré-salvar no cache as páginas do novo segmento para abertura instantânea
         // ESSENCIAL: Atualizar sourceUrl e originalIndex para o novo arquivo e REMOVER originalFile
         const segmentPages = indices.map((idx, newIdx) => {
-          const { originalFile, ...rest } = pages[idx];
+          const rest = withoutOriginalFile(pages[idx]);
           return {
             ...rest,
             sourceUrl: url, 
@@ -872,7 +891,6 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
   };
 
   const renderPageAsImage = async (page: PdfPage, newPdf: any) => {
-    const { PDFDocument } = window.PDFLib;
     let pngBytes: Uint8Array | null = null;
 
     if (page.sourceType === 'pdf') {

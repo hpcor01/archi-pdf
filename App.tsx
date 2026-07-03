@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, X, Sparkles, Info, Users, ShieldCheck, Github, ExternalLink, BookOpen, Layers, Maximize2, FileText, Settings, LayoutGrid, Command } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Plus, X, Sparkles, Info, Users, ShieldCheck, ExternalLink, BookOpen, Layers, Maximize2, FileText, Settings, LayoutGrid, Command } from 'lucide-react';
 import TopBar from './components/TopBar';
 import DocumentColumn from './components/DocumentColumn';
 import EditorModal from './components/EditorModal';
@@ -11,6 +11,7 @@ import { DocumentGroup, AppSettings, ImageItem, Language, Theme } from './types'
 import { INITIAL_SETTINGS, TRANSLATIONS } from './constants';
 import { generatePDF } from './services/pdfService';
 import { autoCropImage } from './services/cvService';
+import { pdfCacheService } from './services/pdfCacheService';
 
 const APP_VERSION_LABEL = "2.9.1";
 
@@ -55,6 +56,30 @@ const App = () => {
   }, [documents]);
 
   const t = TRANSLATIONS[language];
+
+  useEffect(() => {
+    pdfCacheService.pruneOldCache(7);
+  }, []);
+
+  const revokeUrl = (url?: string) => {
+    if (url?.startsWith('blob:')) {
+      URL.revokeObjectURL(url);
+    }
+  };
+
+  const revokeItemUrls = (item: ImageItem) => {
+    const urls = new Set([item.url, item.originalUrl, item.backupUrl]);
+    urls.forEach(revokeUrl);
+  };
+
+  const revokeReplacedItemUrls = (previousItem: ImageItem, nextItem: ImageItem) => {
+    const retainedUrls = new Set([nextItem.url, nextItem.originalUrl, nextItem.backupUrl]);
+    [previousItem.url, previousItem.originalUrl, previousItem.backupUrl].forEach(url => {
+      if (url && !retainedUrls.has(url)) {
+        revokeUrl(url);
+      }
+    });
+  };
 
   useEffect(() => {
     document.title = t.appTitle;
@@ -127,16 +152,10 @@ const App = () => {
     }
   };
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        handleSave();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [documents, settings]);
+  const handleCancelPaste = () => {
+    pendingPasteItems?.forEach(revokeItemUrls);
+    setPendingPasteItems(null);
+  };
 
   const hasAnyPdf = useMemo(() => {
     return documents.some(doc => doc.items.some(item => item.type === 'pdf'));
@@ -205,7 +224,11 @@ const App = () => {
   };
 
   const handleDeleteDocument = (id: string) => {
-    if (documents.length <= 1) return; 
+    if (documents.length <= 1) return;
+    const docToDelete = documents.find(d => d.id === id);
+    if (docToDelete) {
+      docToDelete.items.forEach(revokeItemUrls);
+    }
     setDocuments(documents.filter(d => d.id !== id));
   };
 
@@ -222,6 +245,9 @@ const App = () => {
   };
 
   const handleClearAll = () => {
+    documents.forEach(doc => {
+      doc.items.forEach(revokeItemUrls);
+    });
     setDocuments([{ id: Date.now().toString(), title: 'PDF 1', items: [], selected: true }]);
     setBatchHistory(null);
   };
@@ -261,6 +287,13 @@ const App = () => {
   };
 
   const handleRemoveItem = (docId: string, itemId: string) => {
+    const doc = documents.find(d => d.id === docId);
+    if (doc) {
+      const item = doc.items.find(i => i.id === itemId);
+      if (item) {
+        revokeItemUrls(item);
+      }
+    }
     setDocuments(prev => prev.map(doc => 
       doc.id === docId ? { ...doc, items: doc.items.filter(i => i.id !== itemId) } : doc
     ));
@@ -276,7 +309,11 @@ const App = () => {
       if (doc.id === editingItem.docId) {
         return {
           ...doc,
-          items: doc.items.map(i => i.id === updatedItem.id ? updatedItem : i)
+          items: doc.items.map(i => {
+            if (i.id !== updatedItem.id) return i;
+            revokeReplacedItemUrls(i, updatedItem);
+            return updatedItem;
+          })
         };
       }
       return doc;
@@ -308,7 +345,9 @@ const App = () => {
         ...doc,
         items: doc.items.map(item => {
           if (item.id !== itemId) return item;
-          return { ...item, url: item.originalUrl, backupUrl: undefined };
+          const updatedItem = { ...item, url: item.originalUrl, backupUrl: undefined };
+          revokeReplacedItemUrls(item, updatedItem);
+          return updatedItem;
         })
       };
     }));
@@ -322,7 +361,9 @@ const App = () => {
         ...doc,
         items: doc.items.map(item => {
           if (item.id !== itemId || !item.backupUrl) return item;
-          return { ...item, url: item.backupUrl, backupUrl: undefined };
+          const updatedItem = { ...item, url: item.backupUrl, backupUrl: undefined };
+          revokeReplacedItemUrls(item, updatedItem);
+          return updatedItem;
         })
       };
     }));
@@ -359,8 +400,11 @@ const App = () => {
       const [movedItem] = sourceItems.splice(itemIndex, 1);
       newDocs[sourceDocIndex] = { ...newDocs[sourceDocIndex], items: sourceItems };
       const targetItems = sourceDocId === targetDocId ? sourceItems : [...newDocs[targetDocIndex].items];
-      if (targetIndex === null || targetIndex >= targetItems.length) targetItems.push(movedItem);
-      else targetItems.splice(targetIndex, 0, movedItem);
+      const adjustedTargetIndex = sourceDocId === targetDocId && targetIndex !== null && itemIndex < targetIndex
+        ? targetIndex - 1
+        : targetIndex;
+      if (adjustedTargetIndex === null || adjustedTargetIndex >= targetItems.length) targetItems.push(movedItem);
+      else targetItems.splice(adjustedTargetIndex, 0, movedItem);
       newDocs[targetDocIndex] = { ...newDocs[targetDocIndex], items: targetItems };
       return newDocs;
     });
@@ -385,7 +429,7 @@ const App = () => {
           const newUrl = await autoCropImage(task.url, t);
           if (newUrl !== task.url) successCount++;
           setDocuments(prev => prev.map(doc => doc.id === task.docId ? { ...doc, items: doc.items.map(i => i.id === task.itemId ? { ...i, url: newUrl, processing: false } : i) } : doc));
-        } catch (e) {
+        } catch {
           setDocuments(prev => prev.map(doc => doc.id === task.docId ? { ...doc, items: doc.items.map(i => i.id === task.itemId ? { ...i, processing: false } : i) } : doc));
         }
       }
@@ -399,7 +443,7 @@ const App = () => {
     if (batchHistory) { setDocuments(batchHistory); setBatchHistory(null); }
   };
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     const docsToSave = documents.filter(doc => doc.selected);
     if (docsToSave.length === 0) return;
     setIsSaving(true);
@@ -425,13 +469,24 @@ const App = () => {
         });
         setBatchHistory(null);
       }, 500);
-    } catch (e) {
+    } catch {
       setToast({ visible: true, message: t.docSaveError, type: 'error' });
     } finally {
       setIsSaving(false);
       setSaveProgress(null);
     }
-  };
+  }, [documents, settings, t]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        handleSave();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleSave]);
 
   const getChangelog = () => {
     return [
@@ -453,7 +508,6 @@ const App = () => {
           onClearAll={handleClearAll} onRemoveBgBatch={handleBatchAutoCrop}
           onUndoBatch={handleUndoBatch} canUndo={!!batchHistory}
           isSaving={isSaving} isProcessing={isProcessing}
-          isPdfSelected={documents.some(d => d.selected && d.items.some(i => i.type === 'pdf'))}
           hasAnyPdf={hasAnyPdf}
           allSelected={documents.length > 0 && documents.every(d => d.selected)}
           hasSelection={documents.some(d => d.selected)}
@@ -470,7 +524,7 @@ const App = () => {
               <div className="flex h-full min-w-full"> 
                 {documents.map(doc => (
                   <DocumentColumn 
-                    key={doc.id} document={doc} settings={settings} onAddItem={handleAddItem}
+                    key={doc.id} document={doc} onAddItem={handleAddItem}
                     onRemoveItem={handleRemoveItem} onEditItem={(item) => handleEditItem(doc.id, item)}
                     onRenameDoc={handleRenameDocument} onDeleteDoc={handleDeleteDocument}
                     onToggleSelection={handleToggleColumnSelection} onRotateItem={handleRotateItem}
@@ -722,7 +776,7 @@ const App = () => {
                 </div>
                 <div className="flex justify-end">
                   <button 
-                    onClick={() => setPendingPasteItems(null)}
+                    onClick={handleCancelPaste}
                     className="px-4 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
                   >
                     {t.cancel}
