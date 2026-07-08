@@ -273,106 +273,71 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
 
   initializeEditorRef.current = initializeEditor;
 
-  // Optimized: loads pages in parallel chunks of 3
+  // Sequential page rendering to avoid concurrent PDF.js render conflicts
   const processFile = useCallback(async (url: string, type: 'pdf' | 'image', file: File | undefined, currentLoadId: number) => {
     if (type === 'pdf') {
-      if (!window.pdfjsLib) return;
+      if (!window.pdfjsLib) { console.error('[PdfEditor] pdfjsLib not found!'); return; }
       let arrayBuffer: ArrayBuffer;
       if (file) arrayBuffer = await file.arrayBuffer();
       else arrayBuffer = await fetch(url).then(res => res.arrayBuffer());
 
-      // IMPORTANTE: Clonar o buffer antes de passar para o PDF.js
-      // O PDF.js "desvincula" (detaches) o ArrayBuffer original por performance, 
-      // o que impedia a gravação no cache (IndexedDB) gerando DataCloneError.
-      const loadingTask = window.pdfjsLib.getDocument({ data: arrayBuffer.slice(0) });
+      // PDF.js 3.x requer Uint8Array (não ArrayBuffer direto).
+      // Usamos uma cópia para não desvinculá-lo antes de salvá-lo no cache.
+      const pdfData = new Uint8Array(arrayBuffer.slice(0));
+      const loadingTask = window.pdfjsLib.getDocument({ data: pdfData });
       const pdf = await loadingTask.promise;
+      console.debug('[PdfEditor] PDF loaded, pages:', pdf.numPages);
 
-      const CHUNK_SIZE = 5; // Aumentado de 3 para 5 (Blobs são mais leves)
-      for (let chunkStart = 1; chunkStart <= pdf.numPages; chunkStart += CHUNK_SIZE) {
-        const chunkEnd = Math.min(chunkStart + CHUNK_SIZE - 1, pdf.numPages);
-        const chunkIndices = Array.from({ length: chunkEnd - chunkStart + 1 }, (_, i) => chunkStart + i);
+      const allPages: PdfPage[] = [];
 
-        const chunkPages = await Promise.all(
-          chunkIndices.map(async (i) => {
-            const page = await pdf.getPage(i);
-            const viewport = page.getViewport({ scale: 0.4 });
-            
-            // OTIMIZAÇÃO: Usar OffscreenCanvas se disponível para evitar bloqueio da thread principal
-            let canvas: HTMLCanvasElement | OffscreenCanvas;
-            if (typeof OffscreenCanvas !== 'undefined') {
-              canvas = new OffscreenCanvas(viewport.width, viewport.height);
-            } else {
-              canvas = document.createElement('canvas');
-              canvas.width = viewport.width;
-              canvas.height = viewport.height;
-            }
-            
-            const context = canvas.getContext('2d');
-            if (context) {
-              await page.render({ canvasContext: context as any, viewport }).promise;
-              
-              let blob: Blob;
-              if (typeof OffscreenCanvas !== 'undefined' && canvas instanceof OffscreenCanvas) {
-                blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.6 });
-              } else {
-                blob = await new Promise<Blob>((resolve) => (canvas as HTMLCanvasElement).toBlob(blob => resolve(blob!), 'image/jpeg', 0.6));
-              }
-
-              const thumbnailUrl = URL.createObjectURL(blob);
-
-              return {
-                originalIndex: i - 1,
-                thumbnail: thumbnailUrl,
-                thumbnailBlob: blob,
-                id: Math.random().toString(36).substr(2, 9),
-                sourceUrl: url,
-                sourceType: 'pdf' as const,
-                originalFile: file,
-                isModified: false,
-                width: viewport.width / 0.4,
-                height: viewport.height / 0.4,
-              };
-            }
-            return null;
-          })
-        );
-
-        // Verificar se ainda somos o processo atual antes de atualizar estado
+      // Renderizar páginas sequencialmente para evitar conflitos internos do PDF.js
+      for (let i = 1; i <= pdf.numPages; i++) {
         if (loadIdRef.current !== currentLoadId) return;
 
-        const validPages = chunkPages.filter(Boolean) as PdfPage[];
-        
-        // Atualizar estado progressivamente
-        setPages(prev => {
-          const newPages = [...prev, ...validPages];
-          if (newPages.length > 0) {
-            pdfCacheService.save(item.id, newPages, arrayBuffer);
-          }
-          return newPages;
+        const pdfPage = await pdf.getPage(i);
+        const viewport = pdfPage.getViewport({ scale: 0.4 });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const context = canvas.getContext('2d');
+
+        if (!context) { console.error('[PdfEditor] Failed to get 2d context for page', i); continue; }
+
+        await pdfPage.render({ canvasContext: context, viewport }).promise;
+
+        const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.6));
+        if (!blob) { console.error('[PdfEditor] toBlob returned null for page', i); continue; }
+
+        const thumbnailUrl = URL.createObjectURL(blob);
+        console.debug(`[PdfEditor] Page ${i} rendered, blob size:`, blob.size);
+
+        allPages.push({
+          originalIndex: i - 1,
+          thumbnail: thumbnailUrl,
+          thumbnailBlob: blob,
+          id: Math.random().toString(36).substr(2, 9),
+          sourceUrl: url,
+          sourceType: 'pdf' as const,
+          originalFile: file,
+          isModified: false,
+          width: viewport.width / 0.4,
+          height: viewport.height / 0.4,
         });
 
-        // "Respiro" mínimo de 5ms apenas para manter o loop de eventos livre
-        await new Promise(r => setTimeout(r, 5));
+        // Atualizar UI progressivamente a cada página
+        setPages([...allPages]);
+        await new Promise(r => setTimeout(r, 0));
       }
 
-      // 3. Persistir no cache final (redundante mas seguro para garantir integridade)
       if (loadIdRef.current !== currentLoadId) return;
-      
-      const finalPages = await new Promise<PdfPage[]>(resolve => {
-        setPages(current => {
-          resolve(current);
-          return current;
-        });
-      });
 
-      if (finalPages.length > 0) {
-        await pdfCacheService.save(item.id, finalPages, arrayBuffer);
+      if (allPages.length > 0) {
+        await pdfCacheService.save(item.id, allPages, arrayBuffer);
         console.debug('[PDF Cache] Saved!', item.id);
       }
     } else {
-      // Verificar se ainda somos o processo atual antes de adicionar a imagem
       if (loadIdRef.current !== currentLoadId) return;
-
       setPages(prev => [...prev, {
         originalIndex: 0,
         thumbnail: url,
@@ -385,9 +350,18 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
     }
   }, [item.id]);
 
+  const loadedHighResIndexRef = useRef<number | null>(null);
+
   const loadHighRes = useCallback(async (index: number) => {
     const page = pages[index];
     if (!page) return;
+
+    if (loadedHighResIndexRef.current === index) {
+      // Já carregamos ou estamos carregando a alta resolução para esta página.
+      return;
+    }
+    loadedHighResIndexRef.current = index;
+
     highResLoadIdRef.current += 1;
     const currentHighResLoadId = highResLoadIdRef.current;
 
@@ -419,7 +393,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
           arrayBuffer = await fetch(page.sourceUrl).then(res => res.arrayBuffer());
         }
 
-        const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
         const pdfPage = await pdf.getPage(page.originalIndex + 1);
         const viewport = pdfPage.getViewport({ scale: 4.5 });
         const canvas = document.createElement('canvas');
@@ -449,21 +423,17 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
         setPageZoom(fitZoom);
       }
 
-      if (highResLoadIdRef.current !== currentHighResLoadId) return;
-
       setHighResPageUrl(url);
       setImgNaturalSize({ w, h });
 
-      if (historyIndex === -1) {
-        setPageHistory([url]);
-        setHistoryIndex(0);
-      }
+      setPageHistory(prev => prev.length === 0 ? [url] : prev);
+      setHistoryIndex(prev => prev === -1 ? 0 : prev);
     } catch (e) {
       if (highResLoadIdRef.current === currentHighResLoadId) {
         console.error(e);
       }
     }
-  }, [historyIndex, item.id, pages]);
+  }, [item.id, pages]);
 
   const triggerDetection = async (url: string, w: number, h: number) => {
     setIsLoading(true);
@@ -478,6 +448,12 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
       setPageHistory([]);
       setHistoryIndex(-1);
       setIsCropping(false);
+      loadedHighResIndexRef.current = null;
+    }
+  }, [viewingPageIndex]);
+
+  useEffect(() => {
+    if (viewingPageIndex !== null) {
       loadHighRes(viewingPageIndex);
     }
   }, [viewingPageIndex, loadHighRes]);
@@ -494,7 +470,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
     setHistoryIndex(newHistory.length - 1);
     setHighResPageUrl(url);
     markCurrentPageModified();
-    setPages(prev => prev.map((p, i) => i === viewingPageIndex ? { ...p, thumbnail: url, sourceType: 'image', originalFile: undefined, isModified: true } : p));
+    setPages(prev => prev.map((p, i) => i === viewingPageIndex ? { ...p, thumbnail: url, thumbnailBlob: undefined, sourceType: 'image', originalFile: undefined, isModified: true } : p));
   };
 
   const handleRotate = async (dir: 'L' | 'R') => {
@@ -899,7 +875,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
         if (page.originalFile) arrayBuffer = await page.originalFile.arrayBuffer();
         else arrayBuffer = await fetch(page.sourceUrl).then(res => res.arrayBuffer());
 
-        const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
         const pdfPage = await pdf.getPage(page.originalIndex + 1);
         const viewport = pdfPage.getViewport({ scale: 4.5 });
         const canvas = document.createElement('canvas');

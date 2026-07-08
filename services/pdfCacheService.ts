@@ -3,7 +3,7 @@ import { PdfPage } from '../components/PdfEditorModal';
 
 const DB_NAME = 'ArchiPDFCache';
 const STORE_NAME = 'pdf_pages';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Bump para limpar cache corrompido pelo OffscreenCanvas
 
 class PdfCacheService {
   private db: IDBDatabase | null = null;
@@ -16,9 +16,11 @@ class PdfCacheService {
 
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          db.createObjectStore(STORE_NAME);
+        // Apaga a store antiga para forçar regeneração dos thumbnails
+        if (db.objectStoreNames.contains(STORE_NAME)) {
+          db.deleteObjectStore(STORE_NAME);
         }
+        db.createObjectStore(STORE_NAME);
       };
 
       request.onsuccess = (event) => {
@@ -75,7 +77,7 @@ class PdfCacheService {
       // porque ela expira quando a página é atualizada.
       return {
         ...rest,
-        thumbnail: "" // Será regenerada no próximo 'get'
+        thumbnail: rest.thumbnail && rest.thumbnail.startsWith('blob:') ? "" : rest.thumbnail
       };
     });
 
@@ -134,3 +136,4 @@ class PdfCacheService {
 }
 
 export const pdfCacheService = new PdfCacheService();
+
