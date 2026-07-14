@@ -54,6 +54,15 @@ export interface PdfPage {
   width?: number;
   height?: number;
   thumbnailBlob?: Blob; // Armazenar o binário real para o cache
+  rotation?: number; // Rotação em graus (0, 90, 180, 270)
+  isCropped?: boolean; // Se foi cortada com perspectiva
+}
+
+export interface PageHistoryEntry {
+  url: string;
+  rotation: number;
+  isCropped: boolean;
+  sourceType: 'pdf' | 'image';
 }
 
 interface Point {
@@ -111,7 +120,12 @@ const SortablePageItem: React.FC<SortablePageItemProps> = ({ page, index, pageSh
         onClick={() => onView(index)}
         className="aspect-[1/1.4] bg-[#0D1117] rounded-2xl overflow-hidden relative shadow-lg cursor-zoom-in border border-white/5 group-hover:border-emerald-500/50 transition-all duration-300"
       >
-        <img src={page.thumbnail} alt="Page" className="w-full h-full object-contain" />
+        <img 
+          src={page.thumbnail} 
+          alt="Page" 
+          className="w-full h-full object-contain transition-transform duration-200" 
+          style={{ transform: `rotate(${page.rotation || 0}deg)` }}
+        />
         <div className="absolute inset-0 bg-emerald-500/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
           <Search size={32} className="text-emerald-400" />
         </div>
@@ -142,7 +156,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
   const [points, setPoints] = useState<Point[] | null>(null);
   const [isDraggingPoints, setIsDraggingPoints] = useState(false);
   const [dragInfo, setDragInfo] = useState<{ index: number; type: 'corner' | 'edge' | 'center' } | null>(null);
-  const [pageHistory, setPageHistory] = useState<string[]>([]);
+  const [pageHistory, setPageHistory] = useState<PageHistoryEntry[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [isCropping, setIsCropping] = useState(true);
   const [showPdfHighlight, setShowPdfHighlight] = useState(true);
@@ -395,15 +409,37 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
 
         const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
         const pdfPage = await pdf.getPage(page.originalIndex + 1);
-        const viewport = pdfPage.getViewport({ scale: 4.5 });
+        
+        // --- PERFORMANCE OPTIMIZATION: DYNAMIC SCALING ---
+        const defaultViewport = pdfPage.getViewport({ scale: 1.0 });
+        const maxDimension = Math.max(defaultViewport.width, defaultViewport.height);
+        // Renderiza em uma escala que limita a maior dimensão a 2000px, no máximo escala 2.0
+        const targetScale = Math.min(2.0, 2000 / maxDimension);
+        const viewport = pdfPage.getViewport({ scale: targetScale });
+        
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
         canvas.width = viewport.width;
         canvas.height = viewport.height;
         if (context) {
           await pdfPage.render({ canvasContext: context, viewport }).promise;
-          url = canvas.toDataURL();
-          w = viewport.width; h = viewport.height;
+          let renderUrl = canvas.toDataURL();
+          let renderW = viewport.width;
+          let renderH = viewport.height;
+          
+          if (page.rotation) {
+            renderUrl = await applyImageAdjustments(renderUrl, 100, 100, page.rotation, t);
+            if (page.rotation % 180 !== 0) {
+              const temp = renderW;
+              renderW = renderH;
+              renderH = temp;
+            }
+          }
+          
+          url = renderUrl;
+          w = renderW;
+          h = renderH;
+          
           const containerWidth = scrollContainerRef.current?.clientWidth || window.innerWidth;
           const containerHeight = scrollContainerRef.current?.clientHeight || window.innerHeight;
           const padding = 48;
@@ -426,14 +462,19 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
       setHighResPageUrl(url);
       setImgNaturalSize({ w, h });
 
-      setPageHistory(prev => prev.length === 0 ? [url] : prev);
-      setHistoryIndex(prev => prev === -1 ? 0 : prev);
+      setPageHistory([{
+        url,
+        rotation: page.rotation || 0,
+        isCropped: page.isCropped || false,
+        sourceType: page.sourceType
+      }]);
+      setHistoryIndex(0);
     } catch (e) {
       if (highResLoadIdRef.current === currentHighResLoadId) {
         console.error(e);
       }
     }
-  }, [item.id, pages]);
+  }, [item.id, pages, t]);
 
   const triggerDetection = async (url: string, w: number, h: number) => {
     setIsLoading(true);
@@ -463,14 +504,48 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
     setPages(prev => prev.map((p, i) => i === viewingPageIndex ? { ...p, isModified: true } : p));
   };
 
-  const addToHistory = (url: string) => {
+  const addToHistory = (url: string, isCroppingAction: boolean = false, rotationAngle: number = 0) => {
+    if (viewingPageIndex === null) return;
+    
+    const currentEntry = pageHistory[historyIndex];
+    let nextRotation = currentEntry ? currentEntry.rotation : 0;
+    let nextIsCropped = currentEntry ? currentEntry.isCropped : false;
+    let nextSourceType = currentEntry ? currentEntry.sourceType : 'pdf';
+
+    if (isCroppingAction) {
+      nextIsCropped = true;
+      nextRotation = 0;
+      nextSourceType = 'image';
+    } else if (rotationAngle !== 0 && nextSourceType === 'pdf') {
+      nextRotation = ((nextRotation + rotationAngle) % 360 + 360) % 360;
+    }
+
+    const newEntry: PageHistoryEntry = {
+      url,
+      rotation: nextRotation,
+      isCropped: nextIsCropped,
+      sourceType: nextSourceType
+    };
+
     const newHistory = pageHistory.slice(0, historyIndex + 1);
-    newHistory.push(url);
+    newHistory.push(newEntry);
     setPageHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
     setHighResPageUrl(url);
     markCurrentPageModified();
-    setPages(prev => prev.map((p, i) => i === viewingPageIndex ? { ...p, thumbnail: url, thumbnailBlob: undefined, sourceType: 'image', originalFile: undefined, isModified: true } : p));
+    
+    setPages(prev => prev.map((p, i) => {
+      if (i !== viewingPageIndex) return p;
+      return {
+        ...p,
+        thumbnail: isCroppingAction ? url : p.thumbnail,
+        thumbnailBlob: undefined,
+        isModified: true,
+        rotation: nextRotation,
+        isCropped: nextIsCropped,
+        sourceType: nextSourceType
+      };
+    }));
   };
 
   const handleRotate = async (dir: 'L' | 'R') => {
@@ -481,31 +556,61 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
     const nextW = imgNaturalSize.h;
     const nextH = imgNaturalSize.w;
     setImgNaturalSize({ w: nextW, h: nextH });
-    addToHistory(newUrl);
+    
+    addToHistory(newUrl, false, angle);
+    
     setPoints(null);
     await triggerDetection(newUrl, nextW, nextH);
     setIsLoading(false);
   };
 
   const handleUndo = async () => {
-    if (historyIndex > 0) {
-      const prevUrl = pageHistory[historyIndex - 1];
+    if (historyIndex > 0 && viewingPageIndex !== null) {
+      const prevEntry = pageHistory[historyIndex - 1];
       setHistoryIndex(historyIndex - 1);
-      setHighResPageUrl(prevUrl);
+      setHighResPageUrl(prevEntry.url);
       setIsCropping(true);
-      setPages(prev => prev.map((p, i) => i === viewingPageIndex ? { ...p, thumbnail: prevUrl } : p));
-      if (imgNaturalSize) await triggerDetection(prevUrl, imgNaturalSize.w, imgNaturalSize.h);
+      
+      setPages(prev => prev.map((p, i) => {
+        if (i !== viewingPageIndex) return p;
+        // Para PDF: mantém o thumbnail original, só atualiza a rotação (CSS transform)
+        // Para imagem/recortada: o URL da entrada É o thumbnail correto
+        const newThumbnail = prevEntry.sourceType === 'image' ? prevEntry.url : p.thumbnail;
+        return {
+          ...p,
+          thumbnail: newThumbnail,
+          thumbnailBlob: prevEntry.sourceType === 'image' ? undefined : p.thumbnailBlob,
+          rotation: prevEntry.rotation,
+          isCropped: prevEntry.isCropped,
+          sourceType: prevEntry.sourceType
+        };
+      }));
+      if (imgNaturalSize) await triggerDetection(prevEntry.url, imgNaturalSize.w, imgNaturalSize.h);
     }
   };
 
   const handleReset = async () => {
-    if (pageHistory.length > 0) {
+    if (pageHistory.length > 0 && viewingPageIndex !== null) {
       const original = pageHistory[0];
       setHistoryIndex(0);
-      setHighResPageUrl(original);
+      setHighResPageUrl(original.url);
       setIsCropping(true);
-      setPages(prev => prev.map((p, i) => i === viewingPageIndex ? { ...p, thumbnail: original } : p));
-      if (imgNaturalSize) await triggerDetection(original, imgNaturalSize.w, imgNaturalSize.h);
+      
+      setPages(prev => prev.map((p, i) => {
+        if (i !== viewingPageIndex) return p;
+        // Para PDF: mantém o thumbnail original, zera a rotação
+        // Para imagem/recortada: o URL da entrada IS o thumbnail correto
+        const newThumbnail = original.sourceType === 'image' ? original.url : p.thumbnail;
+        return {
+          ...p,
+          thumbnail: newThumbnail,
+          thumbnailBlob: original.sourceType === 'image' ? undefined : p.thumbnailBlob,
+          rotation: original.rotation,
+          isCropped: original.isCropped,
+          sourceType: original.sourceType
+        };
+      }));
+      if (imgNaturalSize) await triggerDetection(original.url, imgNaturalSize.w, imgNaturalSize.h);
     }
   };
 
@@ -514,7 +619,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
       setIsLoading(true);
       try {
         const cropped = await applyPerspectiveCrop(highResPageUrl, points, t);
-        addToHistory(cropped);
+        addToHistory(cropped, true);
         setIsCropping(false);
         setPoints(null);
       } catch(e) { console.error(e); }
@@ -686,7 +791,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
     if (!window.PDFLib || !window.pdfjsLib) return;
     setIsLoading(true);
     try {
-      const { PDFDocument } = window.PDFLib;
+      const { PDFDocument, degrees } = window.PDFLib;
       const newPdf = await PDFDocument.create();
 
       // Cache loaded source PDFs to avoid re-fetching per unique URL
@@ -703,11 +808,19 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
       };
 
       for (const page of pages) {
-        if (page.sourceType === 'pdf' && !page.isModified) {
+        if (page.sourceType === 'pdf' && !page.isCropped) {
           // FAST PATH: copy original PDF page directly (preserves vectors and text)
           try {
             const sourcePdf = await getSourcePdf(page.sourceUrl, page.originalFile);
             const [copiedPage] = await newPdf.copyPages(sourcePdf, [page.originalIndex]);
+            
+            // Aplica rotação se definida via metadados
+            if (page.rotation) {
+              const currentRotation = copiedPage.getRotation().angle || 0;
+              const targetRotation = (currentRotation + page.rotation) % 360;
+              copiedPage.setRotation(degrees((targetRotation + 360) % 360));
+            }
+            
             newPdf.addPage(copiedPage);
           } catch (err) {
             console.error('copyPages failed, falling back to render', err);
@@ -733,7 +846,9 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
           sourceUrl: newUrl,
           originalIndex: idx,
           isModified: false,
-          sourceType: 'pdf' as const
+          sourceType: 'pdf' as const,
+          rotation: 0,
+          isCropped: false
         };
       });
 
@@ -795,7 +910,7 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
 
     setIsLoading(true);
     try {
-      const { PDFDocument } = window.PDFLib;
+      const { PDFDocument, degrees } = window.PDFLib;
       const getSourcePdf = async (url: string, file?: File): Promise<any> => {
         let arrayBuffer: ArrayBuffer;
         if (file) arrayBuffer = await file.arrayBuffer();
@@ -811,9 +926,17 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
         
         for (const pageIdx of indices) {
           const page = pages[pageIdx];
-          if (page.sourceType === 'pdf' && !page.isModified) {
+          if (page.sourceType === 'pdf' && !page.isCropped) {
             const sourcePdf = await getSourcePdf(page.sourceUrl, page.originalFile);
             const [copiedPage] = await newPdf.copyPages(sourcePdf, [page.originalIndex]);
+            
+            // Aplica rotação se definida via metadados
+            if (page.rotation) {
+              const currentRotation = copiedPage.getRotation().angle || 0;
+              const targetRotation = (currentRotation + page.rotation) % 360;
+              copiedPage.setRotation(degrees((targetRotation + 360) % 360));
+            }
+            
             newPdf.addPage(copiedPage);
           } else {
             await renderPageAsImage(page, newPdf);
@@ -838,6 +961,8 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
             originalIndex: newIdx, 
             isModified: false,
             id: Math.random().toString(36).substr(2, 9),
+            rotation: 0,
+            isCropped: false
           };
         });
         
@@ -877,7 +1002,14 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
 
         const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
         const pdfPage = await pdf.getPage(page.originalIndex + 1);
-        const viewport = pdfPage.getViewport({ scale: 4.5 });
+        
+        // --- PERFORMANCE OPTIMIZATION: DYNAMIC SCALING FOR SAVING ---
+        const defaultViewport = pdfPage.getViewport({ scale: 1.0 });
+        const maxDimension = Math.max(defaultViewport.width, defaultViewport.height);
+        // Limita a maior dimensão a 3000px, no máximo escala 3.0
+        const targetScale = Math.min(3.0, 3000 / maxDimension);
+        const viewport = pdfPage.getViewport({ scale: targetScale });
+        
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
         canvas.width = viewport.width;
@@ -1193,7 +1325,12 @@ const PdfEditorModal: React.FC<PdfEditorModalProps> = ({ item, isOpen, onClose, 
                   {activeDragPage ? (
                     <div className="opacity-90 rotate-2 scale-105 shadow-2xl">
                       <div className="aspect-[1/1.4] bg-[#0D1117] rounded-2xl overflow-hidden border-2 border-emerald-500 shadow-lg" style={{ width: 180 }}>
-                        <img src={activeDragPage.thumbnail} alt="drag" className="w-full h-full object-contain" />
+                        <img 
+                          src={activeDragPage.thumbnail} 
+                          alt="drag" 
+                          className="w-full h-full object-contain" 
+                          style={{ transform: `rotate(${activeDragPage.rotation || 0}deg)` }}
+                        />
                       </div>
                     </div>
                   ) : null}
